@@ -12,6 +12,15 @@ export interface LLMConfig {
   effort?: string;
   /** Anthropic only: send adaptive thinking (default true). Set false for models without it. */
   thinking?: boolean;
+  /**
+   * Per-agent API key (bring-your-own). When set, the provider builds a throwaway
+   * client scoped to this agent instead of using the host's env credentials.
+   * SECURITY: this is held in memory only — it must never be written to a
+   * transcript, log, or disk. It is intentionally absent from config.yaml.
+   */
+  apiKey?: string;
+  /** Custom OpenAI-compatible endpoint (e.g. a user-run proxy). */
+  baseURL?: string;
 }
 
 export interface AgentEntry {

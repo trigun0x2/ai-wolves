@@ -5,7 +5,7 @@ import path from "node:path";
 import express from "express";
 import { WebSocketServer } from "ws";
 import type { ClientMessage, GameEvent, LobbyState, PublicPlayer } from "../shared/types";
-import { loadConfig, type GameConfig } from "../engine/config";
+import { loadConfig, type GameConfig, type LLMConfig, type ProviderName } from "../engine/config";
 import { Game } from "../engine/game";
 import { shuffle } from "../engine/util";
 import { loadPersona, type Persona } from "../agents/personas";
@@ -17,6 +17,8 @@ import { Hub } from "./sockets";
 import { HumanController } from "./human";
 import { paceFor } from "./pacing";
 import { listTranscripts, runReplay, type TranscriptEventEntry } from "./replay";
+import { ByoStore } from "./byo";
+import { validateSubmittedPersona, LIMITS } from "./validation";
 
 const PORT = Number(process.env.PORT ?? 3000);
 const ROOT = process.cwd();
@@ -33,6 +35,15 @@ let activeHuman: HumanController | null = null;
 let speed = 1; // live pacing multiplier, set from the dashboard
 const scoreboard: Record<string, number> = {};
 let gamesPlayed = 0;
+
+// Bring-your-own players (in-memory; keys never persisted or logged).
+const byo = new ByoStore();
+const MAX_SUBMISSIONS = 10;
+setInterval(() => byo.sweep(), 60_000).unref();
+
+function broadcastSubmissions(): void {
+  hub.broadcast({ type: "submissions", list: byo.listPublic() });
+}
 
 function safeLoadConfig(): GameConfig | null {
   try {
@@ -71,29 +82,48 @@ async function startGame(): Promise<void> {
   }
 
   const agentSeats = config.players - (config.play_mode ? 1 : 0);
-  const personaEntries = config.agents.slice(0, agentSeats).map((entry, i) => ({
-    entry,
-    persona: loadPersona(path.join(ROOT, entry.file), i),
-  }));
 
+  // Bring-your-own submissions take seats first (each with its own model + key);
+  // config personas fill any remaining seats with the host's default model.
+  type AgentDef = { persona: Persona; llm: LLMConfig };
+  const submittedDefs: AgentDef[] = byo
+    .all()
+    .slice(0, agentSeats)
+    .map((s) => ({ persona: s.persona, llm: s.llm }));
+
+  const usedNames = new Set(submittedDefs.map((d) => d.persona.name));
+  const fillNeeded = Math.max(0, agentSeats - submittedDefs.length);
+  const configPool: AgentDef[] = config.agents
+    .map((entry, i) => ({
+      persona: loadPersona(path.join(ROOT, entry.file), i),
+      llm: { ...config.default_llm, ...entry.llm } as LLMConfig,
+    }))
+    .filter((d) => !usedNames.has(d.persona.name)); // don't double a name a submission took
+  const agentDefs = [...submittedDefs, ...configPool.slice(0, fillNeeded)];
+
+  if (agentDefs.length < agentSeats) {
+    throw new Error(
+      `need ${agentSeats} players but only ${agentDefs.length} available — add submissions or more personas to config.yaml`,
+    );
+  }
   // Guard against the human reusing an agent name (names are identity).
-  if (humanClaim && personaEntries.some((p) => p.persona.name === humanClaim!.name)) {
-    throw new Error(`Seat name "${humanClaim.name}" collides with an agent persona`);
+  if (humanClaim && agentDefs.some((d) => d.persona.name === humanClaim!.name)) {
+    throw new Error(`Seat name "${humanClaim.name}" collides with a player name`);
   }
 
   // Seat order is shuffled so the human isn't always in the same position.
   type SeatDef =
-    | { kind: "agent"; persona: Persona; llm: GameConfig["default_llm"] }
+    | { kind: "agent"; persona: Persona; llm: LLMConfig }
     | { kind: "human"; name: string; avatar: string };
-  const seatDefs: SeatDef[] = personaEntries.map(({ entry, persona }) => ({
-    kind: "agent" as const,
-    persona,
-    llm: { ...config.default_llm, ...entry.llm },
-  }));
+  const seatDefs: SeatDef[] = agentDefs.map((d) => ({ kind: "agent" as const, ...d }));
   if (config.play_mode && humanClaim) {
     seatDefs.push({ kind: "human", name: humanClaim.name, avatar: humanClaim.avatar });
   }
   const seated = shuffle(seatDefs, Math.random);
+
+  // Submissions are consumed by this game — clear them (and their keys) now.
+  byo.clearSubmissions();
+  broadcastSubmissions();
 
   const gameId = new Date().toISOString().replace(/[:.]/g, "-");
   const llmLog: LLMCallLog[] = [];
@@ -189,6 +219,122 @@ app.get("/api/transcripts", (_req, res) => {
   res.json({ files: listTranscripts(TRANSCRIPTS_DIR) });
 });
 
+// ---------------- Bring-your-own player ----------------
+
+const PROVIDERS: ProviderName[] = ["anthropic", "openai", "openrouter"];
+
+function popupHtml(message: string): string {
+  return `<!doctype html><meta charset="utf-8"><title>OpenRouter</title>
+<body style="font-family:system-ui;background:#0b0e14;color:#e8ecf4;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;text-align:center">
+<div><p style="font-size:20px">${message}</p><p style="color:#8b95a8">You can close this window.</p></div>
+<script>try{window.close()}catch(e){}</script></body>`;
+}
+
+/** Stash a raw pasted key, return an opaque ref (the browser never keeps the key). */
+app.post("/api/credential/raw", (req, res) => {
+  const provider = String(req.body?.provider ?? "") as ProviderName;
+  const key = String(req.body?.key ?? "").trim();
+  const model = req.body?.model ? String(req.body.model) : undefined;
+  if (!PROVIDERS.includes(provider)) {
+    res.status(400).json({ error: "unknown provider" });
+    return;
+  }
+  if (!key) {
+    res.status(400).json({ error: "key is required" });
+    return;
+  }
+  res.json({ keyRef: byo.putRawKey(provider, key, model) });
+});
+
+/** Begin OpenRouter OAuth: returns the authorize URL + a keyRef to track it. */
+app.post("/api/credential/openrouter/start", (req, res) => {
+  const { keyRef, challenge } = byo.startOAuth();
+  const origin = `${req.protocol}://${req.get("host")}`;
+  const callback = `${origin}/api/credential/openrouter/callback/${keyRef}`;
+  const authUrl =
+    `https://openrouter.ai/auth?callback_url=${encodeURIComponent(callback)}` +
+    `&code_challenge=${challenge}&code_challenge_method=S256`;
+  res.json({ keyRef, authUrl });
+});
+
+/** OAuth redirect target: exchange the code for a user-scoped key, server-side. */
+app.get("/api/credential/openrouter/callback/:keyRef", async (req, res) => {
+  const { keyRef } = req.params;
+  const code = String(req.query.code ?? "");
+  const verifier = byo.getVerifier(keyRef);
+  if (!code || !verifier) {
+    res.status(400).send(popupHtml("❌ Authorization failed."));
+    return;
+  }
+  try {
+    const r = await fetch("https://openrouter.ai/api/v1/auth/keys", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code, code_verifier: verifier, code_challenge_method: "S256" }),
+    });
+    if (!r.ok) throw new Error(`exchange failed (${r.status})`);
+    const data = (await r.json()) as { key?: string };
+    if (!data.key) throw new Error("no key returned");
+    byo.attachKey(keyRef, data.key); // key stays server-side — never sent to the browser
+    res.send(popupHtml("✅ OpenRouter connected!"));
+  } catch (err) {
+    res.status(502).send(popupHtml(`❌ ${String(err instanceof Error ? err.message : err)}`));
+  }
+});
+
+/** Poll whether a credential ref now holds a key (used after OAuth). */
+app.get("/api/credential/status", (req, res) => {
+  res.json({ connected: byo.isReady(String(req.query.keyRef ?? "")) });
+});
+
+app.get("/api/submissions", (_req, res) => {
+  res.json({ list: byo.listPublic(), limits: LIMITS, max: MAX_SUBMISSIONS });
+});
+
+/** Submit a bring-your-own player: validated persona + a connected credential ref. */
+app.post("/api/submit", (req, res) => {
+  if (running) {
+    res.status(409).json({ error: "a game is in progress — try again after it ends" });
+    return;
+  }
+  if (byo.count() >= MAX_SUBMISSIONS) {
+    res.status(409).json({ error: `submission limit reached (${MAX_SUBMISSIONS})` });
+    return;
+  }
+  const b = req.body ?? {};
+  const v = validateSubmittedPersona(b, byo.count());
+  if (!v.ok) {
+    res.status(400).json({ error: v.error });
+    return;
+  }
+  if (byo.listPublic().some((s) => s.name.toLowerCase() === v.persona.name.toLowerCase())) {
+    res.status(409).json({ error: `a player named "${v.persona.name}" is already submitted` });
+    return;
+  }
+  try {
+    const sub = byo.addSubmission(
+      v.persona,
+      String(b.keyRef ?? ""),
+      String(b.model ?? ""),
+      b.baseURL ? String(b.baseURL) : undefined,
+    );
+    broadcastSubmissions();
+    res.json({ id: sub.id });
+  } catch (err) {
+    res.status(400).json({ error: String(err instanceof Error ? err.message : err) });
+  }
+});
+
+app.delete("/api/submit/:id", (req, res) => {
+  if (running) {
+    res.status(409).json({ error: "a game is in progress" });
+    return;
+  }
+  byo.removeSubmission(req.params.id);
+  broadcastSubmissions();
+  res.json({ ok: true });
+});
+
 app.post("/api/start", (_req, res) => {
   if (running || replaying) {
     res.status(409).json({ error: "a game is already in progress" });
@@ -260,6 +406,7 @@ wss.on("connection", (ws) => {
   hub.send(ws, { type: "lobby", lobby: lobbyState() });
   hub.send(ws, { type: "scoreboard", tally: scoreboard, games: gamesPlayed });
   hub.send(ws, { type: "speed", speed });
+  hub.send(ws, { type: "submissions", list: byo.listPublic() });
 
   ws.on("message", (data) => {
     let msg: ClientMessage;

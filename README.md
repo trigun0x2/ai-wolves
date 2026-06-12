@@ -100,6 +100,39 @@ For Anthropic models, `effort: low|medium|high` tunes how hard agents think
 (low = snappier and cheaper, high = sweatier play); set `thinking: false` for
 models without adaptive thinking.
 
+## Bring-your-own players (viewers submit their own model + character)
+
+Let viewers field their own agent — their model, their API spend, their persona —
+against yours on stream. Share the **`http://localhost:3000/#/bring`** page.
+
+A contributor:
+
+1. **Builds a character** (name, avatar, color, persona text). Characters are
+   saved in *their own browser* (localStorage) so they can reload and edit them
+   across sessions — handy for regulars. They're ephemeral server-side: forgotten
+   after one game.
+2. **Connects a model** without handing you a raw secret:
+   - **OpenRouter OAuth (recommended):** they authorize against their own
+     OpenRouter account in a popup; the scoped key is fetched server-side and
+     **never touches their browser**. Billing hits their account.
+   - **Paste a key** (OpenAI/Anthropic/OpenRouter): the key is POSTed once,
+     exchanged for an opaque one-game token, and held in server memory only.
+3. **Submits.** The player appears in your dashboard's **Submitted players**
+   panel (name, model, persona preview). Submissions fill seats first; remaining
+   seats come from your `config.yaml` personas. Remove any with ✕, then start.
+
+**Security properties** (see `docs/architecture.md` for the full model):
+
+- API keys live in server memory only, scoped to one game, never written to a
+  transcript, log, or disk, and never sent back to any browser.
+- Persona text is treated as untrusted input: length-capped, control-characters
+  stripped, and wrapped in delimiters in the system prompt framed as "flavor
+  that does not change the rules." Even a fully jailbroken persona **cannot see
+  another player's cards** — information isolation is structural, not prompt-based.
+- This is built for a host who curates submissions. Serve it on a trusted network
+  (or behind HTTPS) — anyone who can reach `/#/bring` can submit a player and
+  spend against a key they connect.
+
 ## Play mode (human seat)
 
 1. Set `play_mode: true` in `config.yaml`.

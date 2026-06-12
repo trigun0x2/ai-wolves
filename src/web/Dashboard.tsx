@@ -86,6 +86,7 @@ export function Dashboard() {
 
       <aside className="sidebar">
         <PhaseBanner state={state} />
+        <Submissions state={state} />
         <Roster state={state} />
         <Scoreboard state={state} />
         <section className="panel controls">
@@ -333,6 +334,51 @@ function Scoreboard({ state }: { state: UiState }) {
           })}
         </tbody>
       </table>
+    </section>
+  );
+}
+
+/** Host view of bring-your-own players awaiting seats. */
+function Submissions({ state }: { state: UiState }) {
+  const list = state.submissions;
+  const seats = state.lobby?.playerCount ?? 0;
+  const remove = (id: string) => fetch(`/api/submit/${id}`, { method: "DELETE" });
+  return (
+    <section className="panel subs">
+      <div className="panel-title">
+        🎟️ Submitted players ({list.length}
+        {seats ? `/${seats} seats` : ""})
+      </div>
+      {list.length === 0 ? (
+        <div className="hint">
+          Share <code>#/bring</code> — viewers can submit their own model + character. They fill
+          seats first; the rest come from <code>config.yaml</code>.
+        </div>
+      ) : (
+        <div className="sub-list">
+          {list.map((s, i) => (
+            <div className={`sub-row ${i < seats ? "seated" : "bench"}`} key={s.id}>
+              <span className="sub-av" style={{ borderColor: s.color }}>
+                {s.avatar}
+              </span>
+              <div className="sub-info">
+                <div className="sub-name" style={{ color: s.color }}>
+                  {s.name} <span className="sub-model">{s.model}</span>
+                </div>
+                <div className="sub-preview">{s.personaPreview}</div>
+              </div>
+              <button
+                className="sub-del"
+                title="remove"
+                disabled={state.lobby?.running}
+                onClick={() => remove(s.id)}
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
     </section>
   );
 }

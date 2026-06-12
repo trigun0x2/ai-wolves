@@ -65,6 +65,40 @@ prompt-based:
 - Agents can't perceive timing, so LLM latency differences between "players"
   leak nothing to them (the UI shows a typing indicator meanwhile).
 
+## Bring-your-own players: security model
+
+Contributors submit their own model + persona via `#/bring`. Two distinct
+threats, handled separately:
+
+**API keys (a secrets problem).** Keys never reach a browser and never hit disk.
+
+- A pasted key is POSTed once to `/api/credential/raw` and immediately exchanged
+  for an opaque `keyRef`; the browser keeps only the ref. OpenRouter OAuth is
+  better still — the scoped key is fetched *server-side* in the callback and
+  stashed under the ref; it never transits the browser at all.
+- Keys live only in `ByoStore` (in-memory, `src/server/byo.ts`), scoped to one
+  game, swept on a TTL, and cleared the moment a game consumes them.
+- The host-facing submission list (`listPublic`) carries persona + model label
+  but **never the key**. The transcript writer serializes profiles, events,
+  prompts, and conversations — none of which include the per-seat `llm.apiKey`.
+  Keys are not loggable because no logged structure references them.
+- Each BYO seat builds a *throwaway* provider client from its own key
+  (`clientFor` in `anthropic.ts` / `openai-compat.ts`), so one contributor's key
+  is never reused for another's agent and never cached by value.
+
+**Persona text (a prompt-injection problem).** The persona body is injected into
+the system prompt, so it's untrusted input.
+
+- `validateSubmittedPersona` caps length, strips control characters, and only
+  reads the `name`/`avatar`/`color` frontmatter keys — an uploader can't smuggle
+  in extra machine-read config.
+- `buildSystemPrompt` wraps the body in `PROFILE` delimiters and frames it as
+  flavor that does not change the rules or the meaning of `[GAME]` messages.
+- The load-bearing guarantee is **structural**: even a persona that fully
+  jailbreaks its own character can't *see* another player's private info, because
+  the engine only ever routes a private result to the acting seat (above). A bad
+  persona can misbehave in public chat; it cannot cheat.
+
 ## Faithfulness notes
 
 - Night wakes key off the **dealt** card; the vote and win conditions key off

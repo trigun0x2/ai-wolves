@@ -11,6 +11,7 @@ import type {
   RevealData,
   Role,
   ServerMessage,
+  SubmissionPublic,
   UIOption,
   VoteRecord,
 } from "../shared/types";
@@ -51,6 +52,7 @@ export interface UiState {
   speed: number;
   table: TableModel;
   effect: (NightEffect & { id: number }) | null; // current night animation
+  submissions: SubmissionPublic[];
   // player-seat extras
   claimedName: string | null;
   privateLog: { id: number; text: string }[];
@@ -80,6 +82,7 @@ const initial: UiState = {
   speed: 1,
   table: { players: {}, center: [null, null, null] },
   effect: null,
+  submissions: [],
   claimedName: null,
   privateLog: [],
   turn: null,
@@ -217,6 +220,8 @@ function reducer(state: UiState, action: Action): UiState {
       return { ...state, claimedName: msg.name };
     case "speed":
       return { ...state, speed: msg.speed };
+    case "submissions":
+      return { ...state, submissions: msg.list };
     case "error":
       return { ...state, error: msg.message };
     default:

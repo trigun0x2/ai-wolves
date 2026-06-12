@@ -108,6 +108,17 @@ export interface LobbyState {
   spoilerDefault: boolean;
 }
 
+/** A bring-your-own player awaiting admission. Host-facing — never carries a key. */
+export interface SubmissionPublic {
+  id: string;
+  name: string;
+  avatar: string;
+  color: string;
+  provider: string;
+  model: string;
+  personaPreview: string;
+}
+
 export type ServerMessage =
   | { type: "event"; event: GameEvent; spoiler: boolean }
   | { type: "lobby"; lobby: LobbyState }
@@ -123,4 +134,5 @@ export type ServerMessage =
   | { type: "turn_over" }
   | { type: "claimed"; name: string }
   | { type: "speed"; speed: number }
+  | { type: "submissions"; list: SubmissionPublic[] }
   | { type: "error"; message: string };

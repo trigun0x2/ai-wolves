@@ -3,13 +3,30 @@ import type { LLMConfig } from "../engine/config";
 import type { ChatMsg, LLMProvider } from "./provider";
 import { withRetry } from "./retry";
 
-let client: Anthropic | null = null;
-function getClient(): Anthropic {
-  client ??= new Anthropic(); // reads ANTHROPIC_API_KEY from the environment
-  return client;
+// Host default client (env key), built once and reused.
+let hostClient: Anthropic | null = null;
+function getHostClient(): Anthropic {
+  hostClient ??= new Anthropic(); // reads ANTHROPIC_API_KEY from the environment
+  return hostClient;
+}
+
+/**
+ * Resolve the client for a config. A per-agent `apiKey` (bring-your-own) builds a
+ * fresh, throwaway client scoped to that agent so one player's key is never reused
+ * for another's. Keys are never cached by value.
+ */
+function clientFor(cfg: LLMConfig): Anthropic {
+  if (cfg.apiKey || cfg.baseURL) {
+    return new Anthropic({
+      apiKey: cfg.apiKey,
+      ...(cfg.baseURL ? { baseURL: cfg.baseURL } : {}),
+    });
+  }
+  return getHostClient();
 }
 
 export function anthropicProvider(cfg: LLMConfig): LLMProvider {
+  const client = clientFor(cfg);
   return {
     async chat(system: string, messages: ChatMsg[]): Promise<string> {
       return withRetry(async () => {
@@ -37,7 +54,7 @@ export function anthropicProvider(cfg: LLMConfig): LLMProvider {
             effort: cfg.effort as "low" | "medium" | "high" | "max",
           };
         }
-        const res = await getClient().messages.create(params);
+        const res = await client.messages.create(params);
         if (res.stop_reason === "refusal") {
           throw Object.assign(new Error("model refused"), { status: 400 });
         }
