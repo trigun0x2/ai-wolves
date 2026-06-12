@@ -1,0 +1,52 @@
+# AI Werewolf Arena — game configuration.
+# Validated on every game start; errors are reported in the dashboard.
+
+players: 5
+
+# Exactly players + 3 cards. Masons must come as a pair (0 or 2).
+# Available: villager(x3), werewolf(x2), mason(x2), seer, robber, troublemaker,
+#            drunk, insomniac, hunter, minion, tanner, doppelganger
+roles:
+  - werewolf
+  - werewolf
+  - seer
+  - robber
+  - troublemaker
+  - villager
+  - villager
+  - villager
+
+discussion:
+  rounds: 3 # each player speaks once per round, randomized order
+
+pacing:
+  message_delay_ms: 2500 # hold after each chat message (stream rhythm)
+  typing_indicator: true
+
+# Whether the dashboard's GM/spoiler panel starts open. Spoiler data is only
+# rendered when the panel is on — toggle it off-capture if you want a clean feed.
+spoiler_panel_default: false
+
+# Set true to reserve one seat for a human (claimed at http://localhost:3000/#/play).
+play_mode: false
+human_turn_timeout_ms: 75000
+
+# Default model for every agent. effort: low keeps the table chatty and cheap-ish;
+# raise to medium/high for sweatier play. thinking: false for models without
+# adaptive thinking support.
+default_llm:
+  provider: anthropic
+  model: claude-opus-4-8
+  effort: low
+
+# First N entries are seated (N - 1 in play mode). Per-agent llm overrides let
+# you pit different models against each other, e.g.:
+#   - file: agents/chad-thundervote.md
+#     llm: { provider: openrouter, model: meta-llama/llama-3.3-70b-instruct }
+agents:
+  - file: agents/grandma-rose.md
+  - file: agents/chad-thundervote.md
+  - file: agents/prof-petrov.md
+  - file: agents/lily-uwu.md
+  - file: agents/deacon-marsh.md
+  - file: agents/silent-sam.md
