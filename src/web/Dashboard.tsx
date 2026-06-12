@@ -91,12 +91,17 @@ export function Dashboard() {
         <Scoreboard state={state} />
         <section className="panel controls">
           <div className="panel-title">Control</div>
+          <CountdownBanner state={state} />
           <button
             className="btn primary"
             onClick={start}
             disabled={!state.connected || state.lobby?.running}
           >
-            {state.lobby?.running ? "Game in progress…" : "▶ Start game"}
+            {state.lobby?.running
+              ? "Game in progress…"
+              : state.lobby?.countdownEndsAt
+                ? "▶ Start now"
+                : "▶ Start game"}
           </button>
           {state.lobby?.playMode && (
             <div className="hint">
@@ -351,6 +356,26 @@ function Scoreboard({ state }: { state: UiState }) {
   );
 }
 
+/** Live countdown to the next auto-started game. */
+function CountdownBanner({ state }: { state: UiState }) {
+  const [now, setNow] = useState(Date.now());
+  const ends = state.lobby?.countdownEndsAt ?? null;
+  useEffect(() => {
+    if (ends === null) return;
+    const t = setInterval(() => setNow(Date.now()), 250);
+    return () => clearInterval(t);
+  }, [ends]);
+  if (ends === null || state.lobby?.running) return null;
+  const left = Math.max(0, Math.ceil((ends - now) / 1000));
+  const mm = Math.floor(left / 60);
+  const ss = String(left % 60).padStart(2, "0");
+  return (
+    <div className="countdown-banner">
+      ⏳ Auto-starting in <b>{mm}:{ss}</b>
+    </div>
+  );
+}
+
 /** Host view of the agent queue. A random subset is drawn each game. */
 function Submissions({ state }: { state: UiState }) {
   const list = state.submissions;
@@ -368,8 +393,9 @@ function Submissions({ state }: { state: UiState }) {
         <>
           <div className="queue-note">
             {list.length <= seats
-              ? `all ${list.length} play each game (${seats} seats)`
-              : `${seats} of ${list.length} drawn at random each game`}
+              ? `all ${list.length} drawn next game (${seats} seats)`
+              : `${seats} of ${list.length} drawn at random next game`}{" "}
+            · removed after playing
           </div>
           <div className="sub-list">
             {list.map((s) => (

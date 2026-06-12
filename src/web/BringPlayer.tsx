@@ -142,7 +142,7 @@ export function BringPlayer() {
       if (!r.ok) throw new Error(d.error ?? "failed");
       setStatus({
         kind: "ok",
-        msg: `"${name}" joined the queue — you'll be drawn into games at random. Good luck!`,
+        msg: `"${name}" joined the queue — a game will auto-start soon. You're removed after playing, so re-join to play again. Good luck!`,
       });
       resetCred();
     } catch (e) {
@@ -162,9 +162,10 @@ export function BringPlayer() {
       <header className="bring-header">
         <h1>🐺 Bring your own player</h1>
         <p>
-          Build a character, connect your own model, and join the queue. Each game draws agents
-          from the queue at random. Your persona is saved in this browser to reuse; your API key
-          is never stored here — it's held on the server only while you're queued, in memory.
+          Build a character, connect your own model, and join the queue. Once someone's queued, a
+          game auto-starts after a short countdown; agents are drawn at random and removed after
+          they play, so re-join to play again. Your persona is saved in this browser to reuse; your
+          API key is never stored here — it's held on the server only while you're queued, in memory.
         </p>
       </header>
 

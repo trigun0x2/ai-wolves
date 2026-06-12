@@ -116,7 +116,7 @@ describe("ByoStore", () => {
     expect(store.isReady(keyRef)).toBe(false);
   });
 
-  it("draw returns a random subset WITHOUT consuming the queue", () => {
+  it("draw removes the drawn agents from the queue (consumed after playing)", () => {
     const store = new ByoStore();
     for (let i = 0; i < 6; i++) {
       const kr = store.putRawKey("openrouter", `sk-${i}`);
@@ -126,72 +126,64 @@ describe("ByoStore", () => {
     }
     const drawn = store.draw(3);
     expect(drawn).toHaveLength(3);
-    // Queue is unchanged — agents persist across games.
-    expect(store.count()).toBe(6);
-    // Drawn entries carry their own resolved key for the seat.
+    // Drawn agents are consumed — only the undrawn remain queued.
+    expect(store.count()).toBe(3);
     expect(drawn.every((d) => typeof d.llm.apiKey === "string")).toBe(true);
+    // The remaining 3 are exactly the ones not drawn.
+    const drawnNames = new Set(drawn.map((d) => d.persona.name));
+    expect(store.listPublic().every((s) => !drawnNames.has(s.name))).toBe(true);
 
-    // A deterministic RNG draws a deterministic subset.
-    const rng = (() => {
-      let s = 0.42;
-      return () => (s = (s * 9301 + 49297) % 233280) / 233280;
-    })();
-    const a = store.draw(3, rng).map((d) => d.persona.name);
-    expect(a).toHaveLength(3);
-    expect(new Set(a).size).toBe(3); // no duplicates
+    // Drawing again pulls only from what's left.
+    const next = store.draw(5);
+    expect(next).toHaveLength(3);
+    expect(store.count()).toBe(0);
   });
 
-  it("draw returns everything when fewer agents than seats", () => {
+  it("draw returns everything when fewer agents than seats, emptying the queue", () => {
     const store = new ByoStore();
     const kr = store.putRawKey("openai", "sk-1");
     const v = validateSubmittedPersona({ name: "Solo", body: "a valid persona body" });
     if (!v.ok) throw new Error(v.error);
     store.addSubmission(v.persona, kr, "gpt-4.1");
     expect(store.draw(5)).toHaveLength(1);
+    expect(store.count()).toBe(0);
   });
 });
 
 describe("Leaderboard", () => {
-  it("accumulates wins/games and persists across instances", async () => {
-    const os = await import("node:os");
-    const fs = await import("node:fs");
-    const pathMod = await import("node:path");
+  it("accumulates wins/games and persists across instances via the store", async () => {
     const { Leaderboard } = await import("../src/server/leaderboard");
+    const { KvStore } = await import("./helpers");
 
-    const file = pathMod.join(
-      os.tmpdir(),
-      `wolves-lb-${Date.now()}-${Math.random().toString(36).slice(2)}.json`,
+    // In-memory store stands in for Redis/file; the point is persistence survives
+    // a fresh Leaderboard reading the same store.
+    const store = new KvStore();
+    const lb = new Leaderboard(store);
+    await lb.init();
+    await lb.record(
+      [
+        { name: "Bea", model: "anthropic:claude-opus-4-8" },
+        { name: "Reg", model: "openai:gpt-4.1" },
+      ],
+      ["Bea"],
     );
-    try {
-      const lb = new Leaderboard(file);
-      lb.record(
-        [
-          { name: "Bea", model: "anthropic:claude-opus-4-8" },
-          { name: "Reg", model: "openai:gpt-4.1" },
-        ],
-        ["Bea"],
-      );
-      lb.record(
-        [
-          { name: "Bea", model: "anthropic:claude-opus-4-8" },
-          { name: "Reg", model: "openai:gpt-4.1" },
-        ],
-        ["Reg"],
-      );
-      expect(lb.games()).toBe(2);
+    await lb.record(
+      [
+        { name: "Bea", model: "anthropic:claude-opus-4-8" },
+        { name: "Reg", model: "openai:gpt-4.1" },
+      ],
+      ["Reg"],
+    );
+    expect(lb.games()).toBe(2);
 
-      // A fresh instance reads the same file — leaderboard is global/persistent.
-      const reloaded = new Leaderboard(file);
-      expect(reloaded.games()).toBe(2);
-      const rows = reloaded.list();
-      const bea = rows.find((r) => r.name === "Bea")!;
-      expect(bea.wins).toBe(1);
-      expect(bea.games).toBe(2);
-      expect(bea.lastModel).toBe("anthropic:claude-opus-4-8");
-      // Sorted by wins then games — both have 1 win and 2 games, so stable by name.
-      expect(rows.map((r) => r.name)).toEqual(["Bea", "Reg"]);
-    } finally {
-      fs.rmSync(file, { force: true });
-    }
+    const reloaded = new Leaderboard(store);
+    await reloaded.init();
+    expect(reloaded.games()).toBe(2);
+    const rows = reloaded.list();
+    const bea = rows.find((r) => r.name === "Bea")!;
+    expect(bea.wins).toBe(1);
+    expect(bea.games).toBe(2);
+    expect(bea.lastModel).toBe("anthropic:claude-opus-4-8");
+    expect(rows.map((r) => r.name)).toEqual(["Bea", "Reg"]);
   });
 });

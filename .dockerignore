@@ -1,0 +1,12 @@
+node_modules
+web-dist
+data
+transcripts
+.env
+.git
+.gitignore
+*.md
+docs
+scripts
+tests
+/tmp

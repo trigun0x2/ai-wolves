@@ -19,12 +19,14 @@ import { paceFor } from "./pacing";
 import { listTranscripts, runReplay, type TranscriptEventEntry } from "./replay";
 import { ByoStore } from "./byo";
 import { Leaderboard } from "./leaderboard";
+import { createStore } from "./store";
 import { validateSubmittedPersona, LIMITS } from "./validation";
 
 const PORT = Number(process.env.PORT ?? 3000);
 const ROOT = process.cwd();
 const CONFIG_PATH = path.join(ROOT, "config.yaml");
-const TRANSCRIPTS_DIR = path.join(ROOT, "transcripts");
+// Configurable so production can point it at a mounted volume (e.g. /data/transcripts).
+const TRANSCRIPTS_DIR = process.env.TRANSCRIPTS_DIR || path.join(ROOT, "transcripts");
 
 const hub = new Hub();
 
@@ -35,8 +37,13 @@ let humanClaim: { name: string; avatar: string } | null = null;
 let activeHuman: HumanController | null = null;
 let speed = 1; // live pacing multiplier, set from the dashboard
 
-// Persistent global leaderboard (survives restarts via data/leaderboard.json).
-const leaderboard = new Leaderboard(path.join(ROOT, "data", "leaderboard.json"));
+// Persistent global leaderboard (Redis in prod, JSON file in dev). Assigned in
+// the async bootstrap below before the server starts listening.
+let leaderboard!: Leaderboard;
+
+// Auto-start countdown state.
+let autoStartTimer: ReturnType<typeof setTimeout> | null = null;
+let countdownEndsAt: number | null = null;
 
 // Bring-your-own players (in-memory; keys never persisted or logged).
 const byo = new ByoStore();
@@ -45,6 +52,44 @@ setInterval(() => byo.sweep(), 60_000).unref();
 
 function broadcastSubmissions(): void {
   hub.broadcast({ type: "submissions", list: byo.listPublic() });
+}
+
+// ---- auto-start countdown ----
+// While ≥1 external agent is queued and nothing is running, count down and then
+// auto-start a game. Skipped in play_mode (a human seat needs a manual start).
+
+function maybeScheduleAutoStart(): void {
+  const cfg = safeLoadConfig();
+  if (!cfg?.auto_start || cfg.play_mode) return;
+  if (running || replaying || autoStartTimer) return;
+  if (byo.count() < 1) return;
+  const secs = Math.max(5, cfg.auto_start_seconds);
+  countdownEndsAt = Date.now() + secs * 1000;
+  autoStartTimer = setTimeout(fireAutoStart, secs * 1000);
+  console.log(`[auto] game auto-starts in ${secs}s (${byo.count()} queued)`);
+  broadcastLobby();
+}
+
+function cancelAutoStart(): void {
+  if (autoStartTimer) clearTimeout(autoStartTimer);
+  autoStartTimer = null;
+  if (countdownEndsAt !== null) {
+    countdownEndsAt = null;
+    broadcastLobby();
+  }
+}
+
+function fireAutoStart(): void {
+  autoStartTimer = null;
+  countdownEndsAt = null;
+  if (running || replaying || byo.count() < 1) {
+    broadcastLobby();
+    return;
+  }
+  startGame().catch((err) => {
+    console.error("[auto] start failed:", err);
+    hub.broadcast({ type: "error", message: String(err) });
+  });
 }
 
 function safeLoadConfig(): GameConfig | null {
@@ -64,6 +109,7 @@ function lobbyState(): LobbyState {
     humanClaimed: humanClaim?.name ?? null,
     playerCount: cfg?.players ?? 0,
     spoilerDefault: cfg?.spoiler_panel_default ?? false,
+    countdownEndsAt,
   };
 }
 
@@ -78,6 +124,7 @@ function broadcastScoreboard(): void {
 // ---------------- Game lifecycle ----------------
 
 async function startGame(): Promise<void> {
+  cancelAutoStart(); // a game is starting — clear any pending countdown
   const config = loadConfig(CONFIG_PATH);
   if (config.play_mode && !humanClaim) {
     throw new Error("play_mode is on — waiting for the human to claim a seat at /play");
@@ -89,9 +136,9 @@ async function startGame(): Promise<void> {
   // own model + key); config personas fill any remaining seats with the host's
   // default model. The queue is NOT consumed — drawn agents stay queued.
   type AgentDef = { persona: Persona; llm: LLMConfig };
-  const submittedDefs: AgentDef[] = byo
-    .draw(agentSeats)
-    .map((s) => ({ persona: s.persona, llm: s.llm }));
+  const drawn = byo.draw(agentSeats); // removes them from the queue
+  const submittedDefs: AgentDef[] = drawn.map((s) => ({ persona: s.persona, llm: s.llm }));
+  if (drawn.length) broadcastSubmissions(); // queue shrank — update the dashboard
 
   const usedNames = new Set(submittedDefs.map((d) => d.persona.name));
   const fillNeeded = Math.max(0, agentSeats - submittedDefs.length);
@@ -181,7 +228,7 @@ async function startGame(): Promise<void> {
     const game = new Game({ config, controllers, emit, gameId });
     const reveal = await game.run();
 
-    leaderboard.record(participants, reveal.winners);
+    await leaderboard.record(participants, reveal.winners);
     broadcastScoreboard();
 
     fs.mkdirSync(TRANSCRIPTS_DIR, { recursive: true });
@@ -206,6 +253,7 @@ async function startGame(): Promise<void> {
     running = false;
     activeHuman = null;
     broadcastLobby();
+    maybeScheduleAutoStart(); // agents that joined during the game can trigger the next one
   }
 }
 
@@ -322,6 +370,7 @@ app.post("/api/submit", (req, res) => {
       b.baseURL ? String(b.baseURL) : undefined,
     );
     broadcastSubmissions();
+    maybeScheduleAutoStart(); // first external agent in the queue → begin countdown
     res.json({ id: sub.id });
   } catch (err) {
     res.status(400).json({ error: String(err instanceof Error ? err.message : err) });
@@ -335,6 +384,7 @@ app.delete("/api/submit/:id", (req, res) => {
   }
   byo.removeSubmission(req.params.id);
   broadcastSubmissions();
+  if (byo.count() === 0) cancelAutoStart(); // queue emptied — stop the countdown
   res.json({ ok: true });
 });
 
@@ -462,6 +512,10 @@ wss.on("connection", (ws) => {
     }
   });
 });
+
+// Bootstrap: connect the durable store + load the leaderboard, then listen.
+leaderboard = new Leaderboard(await createStore());
+await leaderboard.init();
 
 server.listen(PORT, () => {
   console.log(`AI Werewolf Arena → http://localhost:${PORT}  (ws: /ws)`);

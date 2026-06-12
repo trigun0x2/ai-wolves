@@ -1107,6 +1107,32 @@ select {
   margin-bottom: 8px;
 }
 
+.countdown-banner {
+  background: linear-gradient(135deg, #1a2440, #2a1f3d);
+  border: 1px solid #6b8cce;
+  border-radius: 10px;
+  padding: 10px 14px;
+  text-align: center;
+  font-size: 16px;
+  color: #cdd9f5;
+  animation: pulse-soft 2s ease-in-out infinite;
+}
+
+.countdown-banner b {
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes pulse-soft {
+  0%,
+  100% {
+    border-color: #6b8cce;
+  }
+  50% {
+    border-color: var(--accent);
+  }
+}
+
 .sub-av {
   font-size: 26px;
   border: 2px solid #555;

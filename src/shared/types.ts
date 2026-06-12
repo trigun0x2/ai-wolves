@@ -106,6 +106,8 @@ export interface LobbyState {
   humanClaimed: string | null; // claimed player name
   playerCount: number;
   spoilerDefault: boolean;
+  /** When set, a game auto-starts at this epoch-ms (countdown driven by the queue). */
+  countdownEndsAt: number | null;
 }
 
 /** A bring-your-own agent waiting in the queue. Host-facing — never carries a key. */

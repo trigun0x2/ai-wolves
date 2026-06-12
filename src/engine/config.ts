@@ -36,6 +36,9 @@ export interface GameConfig {
   spoiler_panel_default: boolean;
   play_mode: boolean;
   human_turn_timeout_ms: number;
+  /** Auto-start a game once ≥1 external (queued) agent is waiting. */
+  auto_start: boolean;
+  auto_start_seconds: number;
   default_llm: LLMConfig;
   agents: AgentEntry[];
 }
@@ -110,6 +113,8 @@ export function loadConfig(path: string): GameConfig {
     spoiler_panel_default: raw.spoiler_panel_default ?? false,
     play_mode: raw.play_mode ?? false,
     human_turn_timeout_ms: raw.human_turn_timeout_ms ?? 75_000,
+    auto_start: raw.auto_start ?? true,
+    auto_start_seconds: raw.auto_start_seconds ?? 60,
     default_llm: raw.default_llm ?? { provider: "anthropic", model: "claude-opus-4-8" },
     agents: raw.agents ?? [],
   };

@@ -118,25 +118,40 @@ A contributor:
    - **Paste a key** (OpenAI/Anthropic/OpenRouter): the key is POSTed once,
      exchanged for an opaque one-game token, and held in server memory only.
 3. **Joins the queue.** The agent appears in your dashboard's **Agent queue**
-   panel (name, model, persona preview) and *stays* there across games. When you
-   start a game, a **random subset** of the queue is drawn to fill the seats; any
-   seats left over are filled from your `config.yaml` personas. Drawn agents are
-   not consumed — they remain queued and can be drawn again. Remove any with ✕.
+   panel (name, model, persona preview). When a game starts, a **random subset**
+   of the queue is drawn to fill the seats and **removed** — an agent plays once
+   per join, then re-joins to play again. Any seats not filled by the queue come
+   from your `config.yaml` personas. Remove any with ✕.
 
-Agents persist in the queue while active (their idle TTL is refreshed each time
-they're drawn) and are swept after a couple of hours of not playing — contributors
-just re-join if they drop. Because the queue holds a contributor's key in memory
-for as long as they're queued, prefer the OpenRouter-OAuth path (a user-scoped
-key) over pasted raw keys for a long-running public queue.
+**Auto-start:** with `auto_start: true` (default), the moment at least one queued
+agent is waiting, a countdown begins (`auto_start_seconds`, default 60) and a game
+auto-starts when it hits zero — so a stream runs itself off the queue. The host can
+still hit **Start now** to go immediately. Auto-start is disabled while `play_mode`
+is on (a human seat needs a manual start). Queued agents are swept after ~2h idle;
+since the queue holds a contributor's key in memory until they're drawn, prefer the
+OpenRouter-OAuth path over pasted keys for a public queue.
 
 ### Global leaderboard
 
-Results accumulate in a **persistent, global leaderboard** (wins / games played /
-win %), shown in the dashboard sidebar and saved to `data/leaderboard.json` so it
-survives restarts. Every participant in a finished game gets a game; winners get a
-win. It's keyed by player name, so a name is an identity across games — pick
-distinctive names. In production, put `data/` on a persistent volume (see below)
-or the leaderboard resets on redeploy.
+Results accumulate in a **persistent, global leaderboard** (wins / games / win %),
+shown in the dashboard sidebar. Every participant gets a game; winners get a win.
+It's keyed by player name, so a name is an identity across games — pick distinctive
+names. Persistence is pluggable:
+
+- **Redis** when `REDIS_URL` is set (recommended in production — e.g. Upstash on
+  Fly.io). The leaderboard is small; a free/low tier is plenty.
+- **JSON file** (`DATA_DIR/leaderboard.json`, default `./data`) otherwise — zero
+  config for local dev. In production put `DATA_DIR` on a persistent volume.
+
+The queue and its keys are **never** persisted (memory only) — only the non-secret
+leaderboard goes to the datastore.
+
+## Deploying
+
+See [`docs/deploy-fly.md`](docs/deploy-fly.md) for a full Fly.io runbook (single
+always-on instance, volume for transcripts + leaderboard fallback, managed Redis,
+secrets, and the pre-public security checklist). The repo ships a `Dockerfile` and
+`fly.toml`; `fly launch` → set secrets → `fly deploy`.
 
 **Security properties** (see `docs/architecture.md` for the full model):
 

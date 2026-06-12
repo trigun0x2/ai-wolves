@@ -42,6 +42,8 @@ function makeConfig(players: number, roles: Role[]): GameConfig {
     spoiler_panel_default: false,
     play_mode: false,
     human_turn_timeout_ms: 1000,
+    auto_start: false,
+    auto_start_seconds: 60,
     default_llm: { provider: "anthropic", model: "claude-opus-4-8" },
     agents: [],
   };

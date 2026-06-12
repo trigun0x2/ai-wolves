@@ -31,6 +31,12 @@ spoiler_panel_default: false
 play_mode: false
 human_turn_timeout_ms: 75000
 
+# Auto-start a game once at least one external agent is in the queue (from #/bring),
+# after a countdown. Drawn agents are removed from the queue after they play.
+# Disabled automatically when play_mode is on (a human seat needs a manual start).
+auto_start: true
+auto_start_seconds: 60
+
 # Default model for every agent. effort: low keeps the table chatty and cheap-ish;
 # raise to medium/high for sweatier play. thinking: false for models without
 # adaptive thinking support.

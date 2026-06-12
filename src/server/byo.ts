@@ -122,8 +122,8 @@ export class ByoStore {
   }
 
   /**
-   * Randomly draw up to `n` queued agents to seat in a game. Does NOT remove them
-   * — drawn agents stay queued and have their idle TTL refreshed.
+   * Randomly draw up to `n` queued agents to seat in a game and REMOVE them from
+   * the queue — an agent plays once per join, then must re-join to play again.
    */
   draw(n: number, rng: () => number = Math.random): SeatSubmission[] {
     const pool = [...this.subs.values()];
@@ -132,8 +132,7 @@ export class ByoStore {
       [pool[i], pool[j]] = [pool[j], pool[i]];
     }
     const drawn = pool.slice(0, n);
-    const now = Date.now();
-    for (const s of drawn) s.lastActive = now;
+    for (const s of drawn) this.subs.delete(s.id);
     return drawn;
   }
 
