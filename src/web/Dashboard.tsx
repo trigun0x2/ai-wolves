@@ -314,21 +314,34 @@ function Roster({ state }: { state: UiState }) {
 }
 
 function Scoreboard({ state }: { state: UiState }) {
-  const rows = Object.entries(state.tally).sort((a, b) => b[1] - a[1]);
+  const rows = state.leaderboard;
   if (rows.length === 0) return null;
   return (
     <section className="panel">
-      <div className="panel-title">Scoreboard — {state.games} game{state.games === 1 ? "" : "s"}</div>
+      <div className="panel-title">
+        🏆 Global leaderboard — {state.games} game{state.games === 1 ? "" : "s"}
+      </div>
       <table className="score">
+        <thead>
+          <tr className="score-head">
+            <th>Player</th>
+            <th>W</th>
+            <th>GP</th>
+            <th>Win%</th>
+          </tr>
+        </thead>
         <tbody>
-          {rows.map(([name, wins]) => {
-            const p = playerOf(state.players, name);
+          {rows.map((e, i) => {
+            const p = playerOf(state.players, e.name);
+            const rate = e.games ? Math.round((e.wins / e.games) * 100) : 0;
             return (
-              <tr key={name}>
+              <tr key={e.name}>
                 <td>
-                  {p?.avatar ?? ""} {name}
+                  <span className="rank">{i + 1}.</span> {p?.avatar ?? ""} {e.name}
                 </td>
-                <td className="wins">{wins}</td>
+                <td className="wins">{e.wins}</td>
+                <td className="gp">{e.games}</td>
+                <td className="rate">{rate}%</td>
               </tr>
             );
           })}
@@ -338,46 +351,50 @@ function Scoreboard({ state }: { state: UiState }) {
   );
 }
 
-/** Host view of bring-your-own players awaiting seats. */
+/** Host view of the agent queue. A random subset is drawn each game. */
 function Submissions({ state }: { state: UiState }) {
   const list = state.submissions;
   const seats = state.lobby?.playerCount ?? 0;
   const remove = (id: string) => fetch(`/api/submit/${id}`, { method: "DELETE" });
   return (
     <section className="panel subs">
-      <div className="panel-title">
-        🎟️ Submitted players ({list.length}
-        {seats ? `/${seats} seats` : ""})
-      </div>
+      <div className="panel-title">🎮 Agent queue ({list.length} waiting)</div>
       {list.length === 0 ? (
         <div className="hint">
-          Share <code>#/bring</code> — viewers can submit their own model + character. They fill
-          seats first; the rest come from <code>config.yaml</code>.
+          Share <code>#/bring</code> — viewers queue their own model + character. Each game draws{" "}
+          {seats || "N"} at random; any unfilled seats come from <code>config.yaml</code>.
         </div>
       ) : (
-        <div className="sub-list">
-          {list.map((s, i) => (
-            <div className={`sub-row ${i < seats ? "seated" : "bench"}`} key={s.id}>
-              <span className="sub-av" style={{ borderColor: s.color }}>
-                {s.avatar}
-              </span>
-              <div className="sub-info">
-                <div className="sub-name" style={{ color: s.color }}>
-                  {s.name} <span className="sub-model">{s.model}</span>
+        <>
+          <div className="queue-note">
+            {list.length <= seats
+              ? `all ${list.length} play each game (${seats} seats)`
+              : `${seats} of ${list.length} drawn at random each game`}
+          </div>
+          <div className="sub-list">
+            {list.map((s) => (
+              <div className="sub-row queued" key={s.id}>
+                <span className="sub-av" style={{ borderColor: s.color }}>
+                  {s.avatar}
+                </span>
+                <div className="sub-info">
+                  <div className="sub-name" style={{ color: s.color }}>
+                    {s.name} <span className="sub-model">{s.model}</span>
+                  </div>
+                  <div className="sub-preview">{s.personaPreview}</div>
                 </div>
-                <div className="sub-preview">{s.personaPreview}</div>
+                <button
+                  className="sub-del"
+                  title="remove from queue"
+                  disabled={state.lobby?.running}
+                  onClick={() => remove(s.id)}
+                >
+                  ✕
+                </button>
               </div>
-              <button
-                className="sub-del"
-                title="remove"
-                disabled={state.lobby?.running}
-                onClick={() => remove(s.id)}
-              >
-                ✕
-              </button>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        </>
       )}
     </section>
   );

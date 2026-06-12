@@ -140,7 +140,10 @@ export function BringPlayer() {
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error ?? "failed");
-      setStatus({ kind: "ok", msg: `submitted "${name}" — the host will seat you. Good luck!` });
+      setStatus({
+        kind: "ok",
+        msg: `"${name}" joined the queue — you'll be drawn into games at random. Good luck!`,
+      });
       resetCred();
     } catch (e) {
       setStatus({ kind: "err", msg: String(e instanceof Error ? e.message : e) });
@@ -159,9 +162,9 @@ export function BringPlayer() {
       <header className="bring-header">
         <h1>🐺 Bring your own player</h1>
         <p>
-          Build a character, connect your own model, and submit. Your persona is saved in this
-          browser to reuse; your API key is never stored here — it's held on the server only for
-          one game.
+          Build a character, connect your own model, and join the queue. Each game draws agents
+          from the queue at random. Your persona is saved in this browser to reuse; your API key
+          is never stored here — it's held on the server only while you're queued, in memory.
         </p>
       </header>
 
@@ -306,9 +309,9 @@ export function BringPlayer() {
             this browser or any saved file.
           </div>
 
-          <div className="panel-title sub">3 · Submit</div>
+          <div className="panel-title sub">3 · Join the queue</div>
           <button className="btn primary big" onClick={submit} disabled={!keyRef || !name.trim()}>
-            🐺 Submit player to the lobby
+            🐺 Join the game queue
           </button>
           {status && <div className={`status ${status.kind}`}>{status.msg}</div>}
         </section>

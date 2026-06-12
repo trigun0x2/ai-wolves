@@ -18,6 +18,7 @@ import { HumanController } from "./human";
 import { paceFor } from "./pacing";
 import { listTranscripts, runReplay, type TranscriptEventEntry } from "./replay";
 import { ByoStore } from "./byo";
+import { Leaderboard } from "./leaderboard";
 import { validateSubmittedPersona, LIMITS } from "./validation";
 
 const PORT = Number(process.env.PORT ?? 3000);
@@ -33,8 +34,9 @@ let replaying = false;
 let humanClaim: { name: string; avatar: string } | null = null;
 let activeHuman: HumanController | null = null;
 let speed = 1; // live pacing multiplier, set from the dashboard
-const scoreboard: Record<string, number> = {};
-let gamesPlayed = 0;
+
+// Persistent global leaderboard (survives restarts via data/leaderboard.json).
+const leaderboard = new Leaderboard(path.join(ROOT, "data", "leaderboard.json"));
 
 // Bring-your-own players (in-memory; keys never persisted or logged).
 const byo = new ByoStore();
@@ -70,7 +72,7 @@ function broadcastLobby(): void {
 }
 
 function broadcastScoreboard(): void {
-  hub.broadcast({ type: "scoreboard", tally: scoreboard, games: gamesPlayed });
+  hub.broadcast({ type: "scoreboard", entries: leaderboard.list(), games: leaderboard.games() });
 }
 
 // ---------------- Game lifecycle ----------------
@@ -83,12 +85,12 @@ async function startGame(): Promise<void> {
 
   const agentSeats = config.players - (config.play_mode ? 1 : 0);
 
-  // Bring-your-own submissions take seats first (each with its own model + key);
-  // config personas fill any remaining seats with the host's default model.
+  // A random subset of the queued agents is drawn for this game (each with its
+  // own model + key); config personas fill any remaining seats with the host's
+  // default model. The queue is NOT consumed — drawn agents stay queued.
   type AgentDef = { persona: Persona; llm: LLMConfig };
   const submittedDefs: AgentDef[] = byo
-    .all()
-    .slice(0, agentSeats)
+    .draw(agentSeats)
     .map((s) => ({ persona: s.persona, llm: s.llm }));
 
   const usedNames = new Set(submittedDefs.map((d) => d.persona.name));
@@ -121,9 +123,12 @@ async function startGame(): Promise<void> {
   }
   const seated = shuffle(seatDefs, Math.random);
 
-  // Submissions are consumed by this game — clear them (and their keys) now.
-  byo.clearSubmissions();
-  broadcastSubmissions();
+  // Participants for the leaderboard (model label for the "Claude vs GPT" view).
+  const participants = seated.map((s) =>
+    s.kind === "agent"
+      ? { name: s.persona.name, model: `${s.llm.provider}:${s.llm.model}` }
+      : { name: s.name },
+  );
 
   const gameId = new Date().toISOString().replace(/[:.]/g, "-");
   const llmLog: LLMCallLog[] = [];
@@ -176,9 +181,7 @@ async function startGame(): Promise<void> {
     const game = new Game({ config, controllers, emit, gameId });
     const reveal = await game.run();
 
-    for (const w of reveal.winners) scoreboard[w] = (scoreboard[w] ?? 0) + 1;
-    for (const c of controllers) scoreboard[c.name] ??= 0;
-    gamesPlayed++;
+    leaderboard.record(participants, reveal.winners);
     broadcastScoreboard();
 
     fs.mkdirSync(TRANSCRIPTS_DIR, { recursive: true });
@@ -212,7 +215,7 @@ const app = express();
 app.use(express.json());
 
 app.get("/api/state", (_req, res) => {
-  res.json({ lobby: lobbyState(), scoreboard, games: gamesPlayed });
+  res.json({ lobby: lobbyState(), leaderboard: leaderboard.list(), games: leaderboard.games() });
 });
 
 app.get("/api/transcripts", (_req, res) => {
@@ -404,7 +407,7 @@ const wss = new WebSocketServer({ server, path: "/ws" });
 wss.on("connection", (ws) => {
   const client = hub.add(ws);
   hub.send(ws, { type: "lobby", lobby: lobbyState() });
-  hub.send(ws, { type: "scoreboard", tally: scoreboard, games: gamesPlayed });
+  hub.send(ws, { type: "scoreboard", entries: leaderboard.list(), games: leaderboard.games() });
   hub.send(ws, { type: "speed", speed });
   hub.send(ws, { type: "submissions", list: byo.listPublic() });
 

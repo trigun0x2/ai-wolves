@@ -7,6 +7,7 @@ import type {
   GamePhase,
   LobbyState,
   NightEffect,
+  LeaderboardEntry,
   PublicPlayer,
   RevealData,
   Role,
@@ -33,7 +34,7 @@ export interface TurnRequest {
 export interface UiState {
   connected: boolean;
   lobby: LobbyState | null;
-  tally: Record<string, number>;
+  leaderboard: LeaderboardEntry[];
   games: number;
   players: PublicPlayer[];
   roles: Role[];
@@ -63,7 +64,7 @@ export interface UiState {
 const initial: UiState = {
   connected: false,
   lobby: null,
-  tally: {},
+  leaderboard: [],
   games: 0,
   players: [],
   roles: [],
@@ -197,7 +198,7 @@ function reducer(state: UiState, action: Action): UiState {
     case "lobby":
       return { ...state, lobby: msg.lobby };
     case "scoreboard":
-      return { ...state, tally: msg.tally, games: msg.games };
+      return { ...state, leaderboard: msg.entries, games: msg.games };
     case "private_info":
       return {
         ...state,

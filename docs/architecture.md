@@ -86,6 +86,20 @@ threats, handled separately:
   (`clientFor` in `anthropic.ts` / `openai-compat.ts`), so one contributor's key
   is never reused for another's agent and never cached by value.
 
+**The queue (`ByoStore`).** Queued agents persist across games — `draw(n)` returns
+a random subset to seat without removing them, and refreshes each drawn agent's
+idle timer. The queue is swept only for agents that have gone quiet (2h idle) and
+for unconsumed credential refs (30m). A drawn agent carries its own resolved key in
+its seat `llm.apiKey`, so the per-game throwaway-client guarantee still holds. The
+key lives in memory for as long as the agent is queued — a deliberate tradeoff for
+"queue up and get drawn across games"; it never touches disk.
+
+**Leaderboard (`Leaderboard`).** Global and persistent: keyed by player name,
+written to `data/leaderboard.json` after each game and reloaded on boot. This is the
+only durable state the server keeps; everything else (in-flight game, queue, hub)
+is in-memory. On an ephemeral container filesystem `data/` must be a mounted volume
+or the leaderboard resets on redeploy.
+
 **Persona text (a prompt-injection problem).** The persona body is injected into
 the system prompt, so it's untrusted input.
 

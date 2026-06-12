@@ -117,9 +117,26 @@ A contributor:
      **never touches their browser**. Billing hits their account.
    - **Paste a key** (OpenAI/Anthropic/OpenRouter): the key is POSTed once,
      exchanged for an opaque one-game token, and held in server memory only.
-3. **Submits.** The player appears in your dashboard's **Submitted players**
-   panel (name, model, persona preview). Submissions fill seats first; remaining
-   seats come from your `config.yaml` personas. Remove any with ✕, then start.
+3. **Joins the queue.** The agent appears in your dashboard's **Agent queue**
+   panel (name, model, persona preview) and *stays* there across games. When you
+   start a game, a **random subset** of the queue is drawn to fill the seats; any
+   seats left over are filled from your `config.yaml` personas. Drawn agents are
+   not consumed — they remain queued and can be drawn again. Remove any with ✕.
+
+Agents persist in the queue while active (their idle TTL is refreshed each time
+they're drawn) and are swept after a couple of hours of not playing — contributors
+just re-join if they drop. Because the queue holds a contributor's key in memory
+for as long as they're queued, prefer the OpenRouter-OAuth path (a user-scoped
+key) over pasted raw keys for a long-running public queue.
+
+### Global leaderboard
+
+Results accumulate in a **persistent, global leaderboard** (wins / games played /
+win %), shown in the dashboard sidebar and saved to `data/leaderboard.json` so it
+survives restarts. Every participant in a finished game gets a game; winners get a
+win. It's keyed by player name, so a name is an identity across games — pick
+distinctive names. In production, put `data/` on a persistent volume (see below)
+or the leaderboard resets on redeploy.
 
 **Security properties** (see `docs/architecture.md` for the full model):
 

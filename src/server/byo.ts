@@ -4,7 +4,11 @@ import type { Persona } from "../agents/personas";
 import type { SubmissionPublic } from "../shared/types";
 
 /**
- * In-memory store for "bring your own player" submissions.
+ * In-memory queue for "bring your own player" agents.
+ *
+ * Agents queue up and persist across games; when a game starts, a random subset
+ * is drawn to fill the seats (the queue is NOT consumed — drawn agents stay in
+ * the queue and can be drawn again).
  *
  * SECURITY MODEL:
  *  - API keys live ONLY here, in memory, keyed by an opaque `keyRef`. The
@@ -12,11 +16,13 @@ import type { SubmissionPublic } from "../shared/types";
  *    not even for keys they typed (those are POSTed once and exchanged for a ref).
  *  - For OpenRouter OAuth, the key is fetched server-side and stashed under the
  *    same ref; it never transits the browser.
- *  - Nothing here is written to disk or logged. Everything is cleared between
- *    games and swept on a TTL.
+ *  - Nothing here is written to disk or logged. Entries are swept on an idle TTL
+ *    (refreshed whenever an agent is drawn into a game), so a long-running queue
+ *    drops only the agents that have gone quiet.
  */
 
-const TTL_MS = 30 * 60 * 1000;
+const CRED_TTL_MS = 30 * 60 * 1000; // unconsumed credential refs (pre-submit)
+const QUEUE_TTL_MS = 2 * 60 * 60 * 1000; // queued agents, refreshed on each draw
 
 interface Credential {
   provider: ProviderName;
@@ -31,6 +37,7 @@ export interface SeatSubmission {
   persona: Persona;
   llm: LLMConfig; // includes the ephemeral apiKey/baseURL — never serialized
   createdAt: number;
+  lastActive: number; // refreshed whenever drawn into a game
 }
 
 function ref(): string {
@@ -104,13 +111,30 @@ export class ByoStore {
       ...(baseURL ? { baseURL } : {}),
     };
     if (!llm.model) throw new Error("pick a model");
-    const sub: SeatSubmission = { id: ref(), persona, llm, createdAt: Date.now() };
+    const now = Date.now();
+    const sub: SeatSubmission = { id: ref(), persona, llm, createdAt: now, lastActive: now };
     this.subs.set(sub.id, sub);
     return sub;
   }
 
   removeSubmission(id: string): boolean {
     return this.subs.delete(id);
+  }
+
+  /**
+   * Randomly draw up to `n` queued agents to seat in a game. Does NOT remove them
+   * — drawn agents stay queued and have their idle TTL refreshed.
+   */
+  draw(n: number, rng: () => number = Math.random): SeatSubmission[] {
+    const pool = [...this.subs.values()];
+    for (let i = pool.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      [pool[i], pool[j]] = [pool[j], pool[i]];
+    }
+    const drawn = pool.slice(0, n);
+    const now = Date.now();
+    for (const s of drawn) s.lastActive = now;
+    return drawn;
   }
 
   /** Host-facing list — persona preview and model label, NEVER the key. */
@@ -136,16 +160,20 @@ export class ByoStore {
     return this.subs.size;
   }
 
-  /** Clear submissions + the credentials they consumed (call after a game starts/ends). */
+  /** Operator action: empty the whole queue and forget all credentials. */
   clearSubmissions(): void {
     this.subs.clear();
     this.creds.clear();
   }
 
-  /** Drop entries older than the TTL. */
+  /** Drop idle queued agents and stale unconsumed credential refs. */
   sweep(): void {
-    const cutoff = Date.now() - TTL_MS;
-    for (const [k, c] of this.creds) if (c.createdAt < cutoff) this.creds.delete(k);
-    for (const [k, s] of this.subs) if (s.createdAt < cutoff) this.subs.delete(k);
+    const now = Date.now();
+    for (const [k, c] of this.creds) {
+      if (now - c.createdAt > CRED_TTL_MS) this.creds.delete(k);
+    }
+    for (const [k, s] of this.subs) {
+      if (now - s.lastActive > QUEUE_TTL_MS) this.subs.delete(k);
+    }
   }
 }

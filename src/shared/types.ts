@@ -108,7 +108,7 @@ export interface LobbyState {
   spoilerDefault: boolean;
 }
 
-/** A bring-your-own player awaiting admission. Host-facing — never carries a key. */
+/** A bring-your-own agent waiting in the queue. Host-facing — never carries a key. */
 export interface SubmissionPublic {
   id: string;
   name: string;
@@ -119,10 +119,19 @@ export interface SubmissionPublic {
   personaPreview: string;
 }
 
+/** One row of the persistent global leaderboard. */
+export interface LeaderboardEntry {
+  name: string;
+  wins: number;
+  games: number;
+  lastModel?: string;
+  lastPlayed: number;
+}
+
 export type ServerMessage =
   | { type: "event"; event: GameEvent; spoiler: boolean }
   | { type: "lobby"; lobby: LobbyState }
-  | { type: "scoreboard"; tally: Record<string, number>; games: number }
+  | { type: "scoreboard"; entries: LeaderboardEntry[]; games: number }
   | { type: "private_info"; text: string }
   | {
       type: "your_turn";

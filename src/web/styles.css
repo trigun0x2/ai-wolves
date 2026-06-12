@@ -273,10 +273,36 @@ select {
   font-size: 17px;
 }
 
+.score-head th {
+  text-align: right;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  font-weight: 600;
+  padding-bottom: 4px;
+}
+
+.score-head th:first-child {
+  text-align: left;
+}
+
 .score .wins {
   text-align: right;
   font-weight: 800;
   color: var(--accent);
+}
+
+.score .gp,
+.score .rate {
+  text-align: right;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.score .rank {
+  color: var(--muted);
+  font-size: 13px;
+  margin-right: 2px;
 }
 
 /* ---------- controls ---------- */
@@ -1071,13 +1097,14 @@ select {
   border-left: 3px solid transparent;
 }
 
-.sub-row.seated {
-  border-left-color: var(--ok);
+.sub-row.queued {
+  border-left-color: #6b8cce;
 }
 
-.sub-row.bench {
-  opacity: 0.6;
-  border-left-color: var(--muted);
+.queue-note {
+  color: var(--muted);
+  font-size: 13px;
+  margin-bottom: 8px;
 }
 
 .sub-av {
