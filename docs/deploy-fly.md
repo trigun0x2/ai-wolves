@@ -92,6 +92,61 @@ Still on you:
   or restrict by IP, but the token gate is enough to keep randoms from starting
   games or clearing the queue.
 
+## Scaling to multiple machines (Step 1)
+
+The app runs single-process by default. To spread WebSocket/spectator load across
+machines, run **one primary** (the game loop, queue, and keys, in memory) behind
+**N stateless gateways** that serve the UI + spectator sockets and proxy `/api/*`
+to the primary. The fan-out goes over Redis pub/sub; the engine and key-security
+model are unchanged. (See `docs/architecture.md` → "Step 1: multi-instance".)
+
+Requirements: `REDIS_URL` must be set (the gateways can't share state without it),
+and the gateway must know the primary's address.
+
+1. Provision Redis and set the secret (also used by the leaderboard):
+   ```sh
+   fly redis create
+   fly secrets set REDIS_URL="redis://default:<password>@<host>:<port>"
+   ```
+2. Define two process groups in `fly.toml` (replace the single default service).
+   The app auto-detects its role from `FLY_PROCESS_GROUP`:
+   ```toml
+   [processes]
+     primary = "npm run start"
+     gateway = "npm run start"
+
+   [env]
+     PORT = "3000"
+     DATA_DIR = "/data"
+     TRANSCRIPTS_DIR = "/data/transcripts"
+     PRIMARY_URL = "http://primary.process.ai-wolves.internal:3000"
+
+   [http_service]
+     internal_port = 3000
+     force_https = true
+     auto_stop_machines = "off"
+     auto_start_machines = true
+     processes = ["primary", "gateway"]   # both serve HTTP/WS
+
+   [[mounts]]
+     source = "wolves_data"
+     destination = "/data"
+     processes = ["primary"]              # only the primary needs the volume
+
+   [[vm]]
+     size = "shared-cpu-1x"
+     memory = "512mb"
+   ```
+3. Deploy and scale — exactly one primary, as many gateways as you want:
+   ```sh
+   fly deploy
+   fly scale count primary=1 gateway=2
+   ```
+
+Notes: keep `primary=1` (in-memory game state + a single volume — never two). The
+human play seat (`#/play`) is served by the primary; spectators can be on any
+gateway. Concurrent games are a separate, larger change (Step 2).
+
 ## Cost (≈ June 2026)
 
 - Machine: `shared-cpu-1x` / 512MB always-on ≈ **$2–4/mo**.

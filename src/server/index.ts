@@ -20,6 +20,8 @@ import { listTranscripts, runReplay, type TranscriptEventEntry } from "./replay"
 import { ByoStore } from "./byo";
 import { Leaderboard } from "./leaderboard";
 import { createStore } from "./store";
+import { createBus } from "./bus";
+import { createApiProxy } from "./proxy";
 import { validateSubmittedPersona, LIMITS } from "./validation";
 import { requireOperator, rateLimit, isOperator, withinWindowCount } from "./middleware";
 import { looksLikeBillingError } from "../llm/errors";
@@ -29,11 +31,19 @@ const ROOT = process.cwd();
 // Operator auth: when set, start/replay/queue-removal/speed require this token.
 // Unset → auth disabled (open) for local dev.
 const OPERATOR_TOKEN = process.env.OPERATOR_TOKEN || undefined;
+
+// Role: "primary" runs the game loop + control plane (default). "gateway" serves
+// the UI + spectator WebSockets and proxies /api/* to the primary. On Fly the role
+// auto-detects from the process group; locally it's the default primary.
+const ROLE: "primary" | "gateway" =
+  (process.env.ROLE || process.env.FLY_PROCESS_GROUP) === "gateway" ? "gateway" : "primary";
+const PRIMARY_URL = process.env.PRIMARY_URL || "http://localhost:3000";
 const CONFIG_PATH = path.join(ROOT, "config.yaml");
 // Configurable so production can point it at a mounted volume (e.g. /data/transcripts).
 const TRANSCRIPTS_DIR = process.env.TRANSCRIPTS_DIR || path.join(ROOT, "transcripts");
 
-const hub = new Hub();
+// Assigned in the async bootstrap (needs the bus). Used only at runtime.
+let hub!: Hub;
 
 // ---------------- Server state ----------------
 let running = false;
@@ -319,6 +329,13 @@ const app = express();
 app.set("trust proxy", 1);
 app.use(express.json({ limit: "64kb" })); // bound request bodies (personas are small)
 
+// Gateway: forward the whole control plane to the primary. Registered before the
+// real /api routes so it shadows them on a gateway; on the primary it's absent
+// and the real handlers run. (The primary owns the game loop, queue, and keys.)
+if (ROLE === "gateway") {
+  app.use("/api", createApiProxy(PRIMARY_URL));
+}
+
 // Operator guard for host-only endpoints; rate limiter for the public BYO endpoints.
 const op = requireOperator(() => OPERATOR_TOKEN);
 const byoLimit = rateLimit({ windowMs: 60_000, max: 20 });
@@ -531,10 +548,10 @@ const wss = new WebSocketServer({ server, path: "/ws" });
 
 wss.on("connection", (ws) => {
   const client = hub.add(ws);
-  hub.send(ws, { type: "lobby", lobby: lobbyState() });
-  hub.send(ws, { type: "scoreboard", entries: leaderboard.list(), games: leaderboard.games() });
-  hub.send(ws, { type: "speed", speed });
-  hub.send(ws, { type: "submissions", list: byo.listPublic() });
+  // Prime the new socket with current sticky state (lobby/scoreboard/speed/
+  // submissions) from the bus-backed retained cache — works on any instance,
+  // re-reading from the bus if this instance booted before the state existed.
+  hub.primeAndSend(ws);
 
   ws.on("message", (data) => {
     let msg: ClientMessage;
@@ -593,12 +610,25 @@ wss.on("connection", (ws) => {
   });
 });
 
-// Bootstrap: connect the durable store + load the leaderboard, then listen.
+// Bootstrap: wire the bus + hub, connect the durable store, then listen.
+const bus = await createBus(process.env.REDIS_URL);
+hub = new Hub(bus);
+await hub.prime(); // load retained sticky state (e.g. a gateway joining mid-game)
 leaderboard = new Leaderboard(await createStore());
 await leaderboard.init();
 
+// The primary owns game state — publish the initial sticky snapshot so the bus's
+// retained cache is populated for every instance (and late-booting gateways).
+if (ROLE === "primary") {
+  broadcastLobby();
+  broadcastScoreboard();
+  hub.broadcast({ type: "speed", speed });
+  broadcastSubmissions();
+}
+
 server.listen(PORT, () => {
-  console.log(`AI Werewolf Arena → http://localhost:${PORT}  (ws: /ws)`);
+  console.log(`AI Werewolf Arena [${ROLE}] → http://localhost:${PORT}  (ws: /ws, bus: ${bus.kind})`);
+  if (ROLE === "gateway") console.log(`[gateway] proxying /api → ${PRIMARY_URL}`);
   if (OPERATOR_TOKEN) {
     console.log("[auth] operator token required for start/replay/queue-removal/speed");
   } else {

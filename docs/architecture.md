@@ -113,6 +113,32 @@ the system prompt, so it's untrusted input.
   the engine only ever routes a private result to the acting seat (above). A bad
   persona can misbehave in public chat; it cannot cheat.
 
+## Step 1: multi-instance (one primary, N gateways)
+
+By default everything runs in one process. Step 1 lets WebSocket/spectator load
+spread across machines without touching the engine or the key-security model.
+
+- **Bus (`src/server/bus.ts`).** All outbound `ServerMessage`s go through a bus
+  instead of straight to local sockets. `LocalBus` (no `REDIS_URL`) loops back in
+  the same process — identical single-process behavior. `RedisBus` publishes to a
+  pub/sub channel; every instance (including the publisher) receives it via its own
+  subscription and delivers to *its* sockets. The `Hub` keeps doing the spoiler /
+  spectator-vs-player filtering on the delivery side.
+- **Retained state.** Sticky messages (lobby/scoreboard/speed/submissions) are
+  retained (last value) in the bus, so any instance — even a gateway that booted
+  mid-game — primes a newly-connected client with current state. No keys are ever
+  retained or published; only public, already-broadcast data rides the bus.
+- **Roles (`ROLE` / `FLY_PROCESS_GROUP`).** The **primary** (exactly one) runs the
+  game loop, owns `ByoStore` (queue + keys, in memory), and serves the control
+  plane + player seat. **Gateways** (N, stateless) serve the UI + spectator
+  sockets and reverse-proxy `/api/*` to the primary (`src/server/proxy.ts`),
+  forwarding the client IP so the primary's rate limiter and host-game cap stay
+  correct (the primary is the single chokepoint for all control traffic).
+- **Unchanged:** the engine, the LLM providers, every message shape, persona
+  validation, auth, and — critically — keys live only in the primary's memory and
+  never enter Redis. The primary is still the single owner of game logic; true
+  concurrency/HA of the game itself is Step 2.
+
 ## Faithfulness notes
 
 - Night wakes key off the **dealt** card; the vote and win conditions key off
