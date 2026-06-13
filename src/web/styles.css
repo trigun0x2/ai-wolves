@@ -1123,6 +1123,38 @@ select {
   font-variant-numeric: tabular-nums;
 }
 
+/* ---------- operator gate ---------- */
+
+.op-gate {
+  background: var(--bg-3);
+  border: 1px solid #2c3852;
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-bottom: 4px;
+}
+
+.op-gate.ok {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--ok);
+  font-weight: 700;
+  border-color: #1a6a4a;
+}
+
+.op-signout {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 13px;
+  text-decoration: underline;
+}
+
+.op-signout:hover {
+  color: var(--text);
+}
+
 @keyframes pulse-soft {
   0%,
   100% {

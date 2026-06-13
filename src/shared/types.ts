@@ -95,7 +95,7 @@ export interface UIOption {
 export type Channel = "spectator" | "player";
 
 export type ClientMessage =
-  | { type: "hello"; channel: Channel }
+  | { type: "hello"; channel: Channel; token?: string }
   | { type: "claim_seat"; name: string; avatar?: string }
   | { type: "input"; value: unknown } // chat text (string) or decision object
   | { type: "set_speed"; speed: number }; // pacing multiplier (1 = normal, 2 = 2× faster)
@@ -108,6 +108,8 @@ export interface LobbyState {
   spoilerDefault: boolean;
   /** When set, a game auto-starts at this epoch-ms (countdown driven by the queue). */
   countdownEndsAt: number | null;
+  /** Whether operator endpoints require a token (OPERATOR_TOKEN is configured). */
+  authRequired: boolean;
 }
 
 /** A bring-your-own agent waiting in the queue. Host-facing — never carries a key. */

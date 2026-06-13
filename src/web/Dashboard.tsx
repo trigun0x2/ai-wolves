@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CardRef, PublicPlayer, RevealData, Role } from "../shared/types";
 import { useGame, type UiState } from "./useGame";
+import { getOpToken, setOpToken, opHeaders } from "./operator";
 
 const ROLE_EMOJI: Record<Role, string> = {
   villager: "🧑‍🌾",
@@ -34,8 +35,26 @@ export function Dashboard() {
   const [spoilers, setSpoilers] = useState<boolean | null>(null);
   const [transcripts, setTranscripts] = useState<string[]>([]);
   const [banner, setBanner] = useState<string | null>(null);
+  const [opOk, setOpOk] = useState<boolean | null>(null);
 
   const showSpoilers = spoilers ?? state.lobby?.spoilerDefault ?? false;
+  const authRequired = state.lobby?.authRequired ?? false;
+  const authed = !authRequired || opOk === true;
+
+  // Verify the operator token (if auth is on) so we can gate the host controls.
+  useEffect(() => {
+    if (!authRequired) {
+      setOpOk(true);
+      return;
+    }
+    if (!getOpToken()) {
+      setOpOk(false);
+      return;
+    }
+    fetch("/api/operator/check", { headers: opHeaders() })
+      .then((r) => setOpOk(r.ok))
+      .catch(() => setOpOk(false));
+  }, [authRequired, state.connected]);
 
   useEffect(() => {
     fetch("/api/transcripts")
@@ -53,7 +72,7 @@ export function Dashboard() {
   }, [state.error]);
 
   const start = async () => {
-    const res = await fetch("/api/start", { method: "POST" });
+    const res = await fetch("/api/start", { method: "POST", headers: opHeaders() });
     if (!res.ok) {
       const d = await res.json().catch(() => ({}));
       setBanner(d.error ?? "failed to start");
@@ -65,7 +84,7 @@ export function Dashboard() {
     if (!file) return;
     await fetch("/api/replay", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...opHeaders() },
       body: JSON.stringify({ file }),
     });
   };
@@ -86,66 +105,71 @@ export function Dashboard() {
 
       <aside className="sidebar">
         <PhaseBanner state={state} />
-        <Submissions state={state} />
+        <Submissions state={state} authed={authed} />
         <Roster state={state} />
         <Scoreboard state={state} />
         <section className="panel controls">
           <div className="panel-title">Control</div>
-          <CountdownBanner state={state} />
-          <button
-            className="btn primary"
-            onClick={start}
-            disabled={!state.connected || state.lobby?.running}
-          >
-            {state.lobby?.running
-              ? "Game in progress…"
-              : state.lobby?.countdownEndsAt
-                ? "▶ Start now"
-                : "▶ Start game"}
-          </button>
-          {state.lobby?.playMode && (
-            <div className="hint">
-              Play mode: {state.lobby.humanClaimed ? `${state.lobby.humanClaimed} seated` : "waiting for human at #/play"}
-            </div>
-          )}
-          <div className="speed-row">
-            <span className="speed-label">🐢 Text speed</span>
-            {SPEEDS.map((s) => (
+          {authRequired && <OperatorGate opOk={opOk} />}
+          {authed && (
+            <>
+              <CountdownBanner state={state} />
               <button
-                key={s}
-                className={`btn speed ${state.speed === s ? "sel" : ""}`}
-                onClick={() => send({ type: "set_speed", speed: s })}
+                className="btn primary"
+                onClick={start}
+                disabled={!state.connected || state.lobby?.running}
               >
-                {s}×
+                {state.lobby?.running
+                  ? "Game in progress…"
+                  : state.lobby?.countdownEndsAt
+                    ? "▶ Start now"
+                    : "▶ Start game"}
               </button>
-            ))}
-          </div>
-          <label className="toggle">
-            <input
-              type="checkbox"
-              checked={showSpoilers}
-              onChange={(e) => setSpoilers(e.target.checked)}
-            />
-            GM / spoiler panel
-          </label>
-          <select
-            className="select"
-            defaultValue=""
-            disabled={state.lobby?.running}
-            onChange={(e) => {
-              replay(e.target.value);
-              e.target.value = "";
-            }}
-          >
-            <option value="" disabled>
-              ↻ Replay a saved game…
-            </option>
-            {transcripts.map((f) => (
-              <option key={f} value={f}>
-                {f.replace(".json", "")}
-              </option>
-            ))}
-          </select>
+              {state.lobby?.playMode && (
+                <div className="hint">
+                  Play mode: {state.lobby.humanClaimed ? `${state.lobby.humanClaimed} seated` : "waiting for human at #/play"}
+                </div>
+              )}
+              <div className="speed-row">
+                <span className="speed-label">🐢 Text speed</span>
+                {SPEEDS.map((s) => (
+                  <button
+                    key={s}
+                    className={`btn speed ${state.speed === s ? "sel" : ""}`}
+                    onClick={() => send({ type: "set_speed", speed: s })}
+                  >
+                    {s}×
+                  </button>
+                ))}
+              </div>
+              <label className="toggle">
+                <input
+                  type="checkbox"
+                  checked={showSpoilers}
+                  onChange={(e) => setSpoilers(e.target.checked)}
+                />
+                GM / spoiler panel
+              </label>
+              <select
+                className="select"
+                defaultValue=""
+                disabled={state.lobby?.running}
+                onChange={(e) => {
+                  replay(e.target.value);
+                  e.target.value = "";
+                }}
+              >
+                <option value="" disabled>
+                  ↻ Replay a saved game…
+                </option>
+                {transcripts.map((f) => (
+                  <option key={f} value={f}>
+                    {f.replace(".json", "")}
+                  </option>
+                ))}
+              </select>
+            </>
+          )}
           {!state.connected && <div className="hint warn">reconnecting…</div>}
           {banner && <div className="hint warn">{banner}</div>}
         </section>
@@ -356,6 +380,50 @@ function Scoreboard({ state }: { state: UiState }) {
   );
 }
 
+/** Operator login / status. Setting a token reloads so the WS reconnects authed. */
+function OperatorGate({ opOk }: { opOk: boolean | null }) {
+  const [tok, setTok] = useState("");
+  if (opOk) {
+    return (
+      <div className="op-gate ok">
+        <span>🔑 Operator</span>
+        <button
+          className="op-signout"
+          onClick={() => {
+            setOpToken("");
+            location.reload();
+          }}
+        >
+          sign out
+        </button>
+      </div>
+    );
+  }
+  const unlock = () => {
+    if (!tok.trim()) return;
+    setOpToken(tok.trim());
+    location.reload();
+  };
+  return (
+    <div className="op-gate">
+      <div className="hint">🔒 Host controls are locked.</div>
+      <div className="field-row">
+        <input
+          className="in"
+          type="password"
+          placeholder="operator token"
+          value={tok}
+          onChange={(e) => setTok(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && unlock()}
+        />
+        <button className="btn primary" onClick={unlock}>
+          Unlock
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /** Live countdown to the next auto-started game. */
 function CountdownBanner({ state }: { state: UiState }) {
   const [now, setNow] = useState(Date.now());
@@ -377,10 +445,11 @@ function CountdownBanner({ state }: { state: UiState }) {
 }
 
 /** Host view of the agent queue. A random subset is drawn each game. */
-function Submissions({ state }: { state: UiState }) {
+function Submissions({ state, authed }: { state: UiState; authed: boolean }) {
   const list = state.submissions;
   const seats = state.lobby?.playerCount ?? 0;
-  const remove = (id: string) => fetch(`/api/submit/${id}`, { method: "DELETE" });
+  const remove = (id: string) =>
+    fetch(`/api/submit/${id}`, { method: "DELETE", headers: opHeaders() });
   return (
     <section className="panel subs">
       <div className="panel-title">🎮 Agent queue ({list.length} waiting)</div>
@@ -412,7 +481,7 @@ function Submissions({ state }: { state: UiState }) {
                 <button
                   className="sub-del"
                   title="remove from queue"
-                  disabled={state.lobby?.running}
+                  disabled={state.lobby?.running || !authed}
                   onClick={() => remove(s.id)}
                 >
                   ✕

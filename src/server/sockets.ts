@@ -9,6 +9,7 @@ import {
 interface Client {
   ws: WebSocket;
   channel: Channel;
+  operator: boolean; // authenticated as the host (gates operator-only WS actions)
 }
 
 /**
@@ -21,7 +22,7 @@ export class Hub {
   private clients = new Set<Client>();
 
   add(ws: WebSocket): Client {
-    const client: Client = { ws, channel: "spectator" };
+    const client: Client = { ws, channel: "spectator", operator: false };
     this.clients.add(client);
     ws.on("close", () => this.clients.delete(client));
     return client;
@@ -29,6 +30,10 @@ export class Hub {
 
   setChannel(client: Client, channel: Channel): void {
     client.channel = channel;
+  }
+
+  setOperator(client: Client, operator: boolean): void {
+    client.operator = operator;
   }
 
   send(ws: WebSocket, msg: ServerMessage): void {

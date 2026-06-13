@@ -1,4 +1,5 @@
 import { useEffect, useReducer, useRef, useCallback } from "react";
+import { getOpToken } from "./operator";
 import type {
   CardRef,
   Channel,
@@ -244,7 +245,14 @@ export function useGame(channel: Channel) {
       wsRef.current = ws;
       ws.onopen = () => {
         dispatch({ type: "conn", up: true });
-        ws.send(JSON.stringify({ type: "hello", channel } satisfies ClientMessage));
+        const token = getOpToken();
+        ws.send(
+          JSON.stringify({
+            type: "hello",
+            channel,
+            ...(token ? { token } : {}),
+          } satisfies ClientMessage),
+        );
       };
       ws.onmessage = (e) => {
         try {

@@ -146,12 +146,24 @@ names. Persistence is pluggable:
 The queue and its keys are **never** persisted (memory only) — only the non-secret
 leaderboard goes to the datastore.
 
+### Operator auth & rate limiting
+
+For public/streamed deployments, set an `OPERATOR_TOKEN` (env var). When set, the
+host actions — starting/replaying games, removing queued agents, and changing text
+speed — require it, and the dashboard hides those controls until you unlock. Open
+your control view at `http://<host>/?op=YOUR_TOKEN` (the token is saved to that
+browser and stripped from the URL; "sign out" clears it). Spectator views and the
+`/#/bring` contributor page stay public. Unset = everything open (local dev).
+
+The public BYO endpoints (`/api/submit`, `/api/credential/*`) are **rate-limited**
+to 20 requests/min per IP regardless, to blunt griefing and key-burn.
+
 ## Deploying
 
 See [`docs/deploy-fly.md`](docs/deploy-fly.md) for a full Fly.io runbook (single
 always-on instance, volume for transcripts + leaderboard fallback, managed Redis,
-secrets, and the pre-public security checklist). The repo ships a `Dockerfile` and
-`fly.toml`; `fly launch` → set secrets → `fly deploy`.
+the `OPERATOR_TOKEN` secret, and the pre-public checklist). The repo ships a
+`Dockerfile` and `fly.toml`; `fly launch` → set secrets → `fly deploy`.
 
 **Security properties** (see `docs/architecture.md` for the full model):
 

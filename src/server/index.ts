@@ -21,9 +21,13 @@ import { ByoStore } from "./byo";
 import { Leaderboard } from "./leaderboard";
 import { createStore } from "./store";
 import { validateSubmittedPersona, LIMITS } from "./validation";
+import { requireOperator, rateLimit, isOperator } from "./middleware";
 
 const PORT = Number(process.env.PORT ?? 3000);
 const ROOT = process.cwd();
+// Operator auth: when set, start/replay/queue-removal/speed require this token.
+// Unset → auth disabled (open) for local dev.
+const OPERATOR_TOKEN = process.env.OPERATOR_TOKEN || undefined;
 const CONFIG_PATH = path.join(ROOT, "config.yaml");
 // Configurable so production can point it at a mounted volume (e.g. /data/transcripts).
 const TRANSCRIPTS_DIR = process.env.TRANSCRIPTS_DIR || path.join(ROOT, "transcripts");
@@ -110,6 +114,7 @@ function lobbyState(): LobbyState {
     playerCount: cfg?.players ?? 0,
     spoilerDefault: cfg?.spoiler_panel_default ?? false,
     countdownEndsAt,
+    authRequired: !!OPERATOR_TOKEN,
   };
 }
 
@@ -260,10 +265,20 @@ async function startGame(): Promise<void> {
 // ---------------- HTTP ----------------
 
 const app = express();
-app.use(express.json());
+app.set("trust proxy", true); // real client IP behind Fly's proxy (for rate limiting)
+app.use(express.json({ limit: "64kb" })); // bound request bodies (personas are small)
+
+// Operator guard for host-only endpoints; rate limiter for the public BYO endpoints.
+const op = requireOperator(() => OPERATOR_TOKEN);
+const byoLimit = rateLimit({ windowMs: 60_000, max: 20 });
 
 app.get("/api/state", (_req, res) => {
   res.json({ lobby: lobbyState(), leaderboard: leaderboard.list(), games: leaderboard.games() });
+});
+
+/** Lightweight endpoint so the dashboard can verify its operator token. */
+app.get("/api/operator/check", op, (_req, res) => {
+  res.json({ ok: true });
 });
 
 app.get("/api/transcripts", (_req, res) => {
@@ -282,7 +297,7 @@ function popupHtml(message: string): string {
 }
 
 /** Stash a raw pasted key, return an opaque ref (the browser never keeps the key). */
-app.post("/api/credential/raw", (req, res) => {
+app.post("/api/credential/raw", byoLimit, (req, res) => {
   const provider = String(req.body?.provider ?? "") as ProviderName;
   const key = String(req.body?.key ?? "").trim();
   const model = req.body?.model ? String(req.body.model) : undefined;
@@ -298,7 +313,7 @@ app.post("/api/credential/raw", (req, res) => {
 });
 
 /** Begin OpenRouter OAuth: returns the authorize URL + a keyRef to track it. */
-app.post("/api/credential/openrouter/start", (req, res) => {
+app.post("/api/credential/openrouter/start", byoLimit, (req, res) => {
   const { keyRef, challenge } = byo.startOAuth();
   const origin = `${req.protocol}://${req.get("host")}`;
   const callback = `${origin}/api/credential/openrouter/callback/${keyRef}`;
@@ -343,7 +358,7 @@ app.get("/api/submissions", (_req, res) => {
 });
 
 /** Submit a bring-your-own player: validated persona + a connected credential ref. */
-app.post("/api/submit", (req, res) => {
+app.post("/api/submit", byoLimit, (req, res) => {
   if (running) {
     res.status(409).json({ error: "a game is in progress — try again after it ends" });
     return;
@@ -377,18 +392,18 @@ app.post("/api/submit", (req, res) => {
   }
 });
 
-app.delete("/api/submit/:id", (req, res) => {
+app.delete("/api/submit/:id", op, (req, res) => {
   if (running) {
     res.status(409).json({ error: "a game is in progress" });
     return;
   }
-  byo.removeSubmission(req.params.id);
+  byo.removeSubmission(String(req.params.id));
   broadcastSubmissions();
   if (byo.count() === 0) cancelAutoStart(); // queue emptied — stop the countdown
   res.json({ ok: true });
 });
 
-app.post("/api/start", (_req, res) => {
+app.post("/api/start", op, (_req, res) => {
   if (running || replaying) {
     res.status(409).json({ error: "a game is already in progress" });
     return;
@@ -412,7 +427,7 @@ app.post("/api/start", (_req, res) => {
   res.status(202).json({ ok: true });
 });
 
-app.post("/api/replay", (req, res) => {
+app.post("/api/replay", op, (req, res) => {
   if (running || replaying) {
     res.status(409).json({ error: "a game is already in progress" });
     return;
@@ -471,6 +486,7 @@ wss.on("connection", (ws) => {
     switch (msg.type) {
       case "hello": {
         hub.setChannel(client, msg.channel);
+        hub.setOperator(client, isOperator(OPERATOR_TOKEN, msg.token));
         if (msg.channel === "player" && humanClaim) {
           hub.send(ws, { type: "claimed", name: humanClaim.name });
         }
@@ -502,6 +518,10 @@ wss.on("connection", (ws) => {
         break;
       }
       case "set_speed": {
+        if (!client.operator) {
+          hub.send(ws, { type: "error", message: "operator token required" });
+          break;
+        }
         const v = Number(msg.speed);
         if (Number.isFinite(v)) {
           speed = Math.min(4, Math.max(0.25, v));
@@ -519,6 +539,11 @@ await leaderboard.init();
 
 server.listen(PORT, () => {
   console.log(`AI Werewolf Arena → http://localhost:${PORT}  (ws: /ws)`);
+  if (OPERATOR_TOKEN) {
+    console.log("[auth] operator token required for start/replay/queue-removal/speed");
+  } else {
+    console.warn("[auth] OPERATOR_TOKEN not set — operator endpoints are OPEN (fine for local dev)");
+  }
   if (!fs.existsSync(dist)) {
     console.log("Dev mode: open http://localhost:5173 (run `npm run dev`)");
   }

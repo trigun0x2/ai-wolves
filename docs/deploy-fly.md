@@ -61,19 +61,36 @@ The OAuth callback URL is derived from the request host, so on Fly it resolves t
 no extra config. (If you put a custom domain in front, make sure it forwards the
 `Host` header so the callback matches.)
 
-## ⚠️ Before you go public
+## Before you go public
 
-The dashboard and operator endpoints (`/api/start`, `/api/replay`, queue removal)
-are **unauthenticated**. Anyone who reaches the URL can start games and clear the
-queue, and anyone can submit a player at `/#/bring`. Before sharing the link:
+Two protections are built in — turn the first one on:
 
-- Put the **operator surface** behind auth — e.g. Cloudflare Access / an
-  `oauth2-proxy` in front, or restrict by IP. (Ask and I can add an
-  `OPERATOR_TOKEN` gate wired through the dashboard.)
-- **Rate-limit** `/#/bring` and the `/api/submit` + `/api/credential/*` endpoints
-  to blunt griefing and key-burn.
-- **Cap spend** on your own provider keys (the BYO design pushes most spend onto
-  contributors, but the config-persona fallback uses yours).
+- **Operator auth.** Set an `OPERATOR_TOKEN` secret and the host actions
+  (`/api/start`, `/api/replay`, queue removal, and the WS speed control) require
+  it; the dashboard hides those controls until unlocked. Spectator views and the
+  `/#/bring` page stay public.
+
+  ```sh
+  fly secrets set OPERATOR_TOKEN="$(openssl rand -hex 24)"
+  fly secrets list            # shows the digest; copy the value you set
+  ```
+
+  Open your control dashboard at `https://<app>.fly.dev/?op=THE_TOKEN` — the token
+  is saved to that browser and stripped from the URL. Share the plain
+  `https://<app>.fly.dev/` for spectators (and `/#/bring` for contributors).
+  Leaving `OPERATOR_TOKEN` unset keeps everything open (local-dev behavior).
+
+- **Rate limiting** on `/api/submit` and `/api/credential/*` is always on (20
+  requests/min per IP) to blunt griefing and key-burn. `trust proxy` is enabled so
+  it keys on the real client IP behind Fly's edge.
+
+Still on you:
+
+- **Cap spend** on your own provider keys — the BYO design pushes most spend onto
+  contributors, but the config-persona fallback uses yours.
+- For defense in depth you can still front the whole app with Cloudflare Access
+  or restrict by IP, but the token gate is enough to keep randoms from starting
+  games or clearing the queue.
 
 ## Cost (≈ June 2026)
 
