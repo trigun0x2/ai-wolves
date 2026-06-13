@@ -9,6 +9,12 @@ primary_region = 'sjc'
 [build]
 
 [env]
+  # Leaderboard is stored in Redis. Provision it and set the secret (NOT here — it
+  # carries credentials, so it's a Fly secret, not a committed env var):
+  #   fly redis create
+  #   fly secrets set REDIS_URL="redis://default:<password>@<host>:<port>"
+  # Transcripts (and the JSON leaderboard fallback, used only if REDIS_URL is
+  # unset) live on the /data volume so they survive redeploys.
   DATA_DIR = '/data'
   PORT = '3000'
   TRANSCRIPTS_DIR = '/data/transcripts'
@@ -18,11 +24,12 @@ primary_region = 'sjc'
   destination = '/data'
 
 [http_service]
-  internal_port = 8080
+  internal_port = 3000        # must match the app's PORT (3000); Fly launch guessed 8080
   force_https = true
-  auto_stop_machines = 'off'
+  auto_stop_machines = 'off'  # keep the instance warm — it holds live game state
   auto_start_machines = true
   min_machines_running = 1
+  max_machines_running = 1     # single instance: in-memory state + one volume, never scale past 1
 
 [[vm]]
   size = 'shared-cpu-1x'
