@@ -82,7 +82,6 @@ describe("ByoStore", () => {
     const { keyRef, challenge } = store.startOAuth();
     expect(challenge).toBeTruthy();
     expect(store.isReady(keyRef)).toBe(false); // not ready until the exchange
-    expect(store.getVerifier(keyRef)).toBeTruthy();
 
     store.attachKey(keyRef, "sk-or-from-oauth");
     expect(store.isReady(keyRef)).toBe(true);
@@ -104,16 +103,12 @@ describe("ByoStore", () => {
     expect(() => store.addSubmission(v.persona, keyRef, "m")).toThrow();
   });
 
-  it("clearSubmissions wipes submissions and credentials", () => {
+  it("takeVerifier is one-shot (a replayed OAuth callback gets nothing)", () => {
     const store = new ByoStore();
-    const keyRef = store.putRawKey("anthropic", "sk-x");
-    const v = validateSubmittedPersona({ name: "Z", body: "a valid persona body" });
-    if (!v.ok) throw new Error(v.error);
-    store.addSubmission(v.persona, keyRef, "claude-opus-4-8");
-    expect(store.count()).toBe(1);
-    store.clearSubmissions();
-    expect(store.count()).toBe(0);
-    expect(store.isReady(keyRef)).toBe(false);
+    const { keyRef } = store.startOAuth();
+    expect(store.takeVerifier(keyRef)).toBeTruthy();
+    expect(store.takeVerifier(keyRef)).toBeNull(); // consumed — no second exchange
+    expect(store.takeVerifier("bogus")).toBeNull();
   });
 
   it("draw removes the drawn agents from the queue (consumed after playing)", () => {

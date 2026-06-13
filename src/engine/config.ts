@@ -36,9 +36,17 @@ export interface GameConfig {
   spoiler_panel_default: boolean;
   play_mode: boolean;
   human_turn_timeout_ms: number;
-  /** Auto-start a game once ≥1 external (queued) agent is waiting. */
+  /** Auto-start a game once enough queued agents are waiting. */
   auto_start: boolean;
   auto_start_seconds: number;
+  /**
+   * If true, auto-started games may fill empty seats with config personas on the
+   * HOST's key — convenient but lets an anonymous submitter trigger games billed
+   * to you. Default false: auto-start only fires with a full queue of
+   * bring-your-own agents, so auto games never spend the host key. Manual
+   * (operator) starts always allow host fill.
+   */
+  auto_start_host_fill: boolean;
   default_llm: LLMConfig;
   agents: AgentEntry[];
 }
@@ -115,6 +123,7 @@ export function loadConfig(path: string): GameConfig {
     human_turn_timeout_ms: raw.human_turn_timeout_ms ?? 75_000,
     auto_start: raw.auto_start ?? true,
     auto_start_seconds: raw.auto_start_seconds ?? 60,
+    auto_start_host_fill: raw.auto_start_host_fill ?? false,
     default_llm: raw.default_llm ?? { provider: "anthropic", model: "claude-opus-4-8" },
     agents: raw.agents ?? [],
   };

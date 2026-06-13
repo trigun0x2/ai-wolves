@@ -62,11 +62,16 @@ function broadcastSubmissions(): void {
 // While ≥1 external agent is queued and nothing is running, count down and then
 // auto-start a game. Skipped in play_mode (a human seat needs a manual start).
 
+/** Queued agents needed to auto-start: a full BYO table, unless host-fill is opted in. */
+function autoStartMinQueue(cfg: GameConfig): number {
+  return cfg.auto_start_host_fill ? 1 : cfg.players;
+}
+
 function maybeScheduleAutoStart(): void {
   const cfg = safeLoadConfig();
   if (!cfg?.auto_start || cfg.play_mode) return;
   if (running || replaying || autoStartTimer) return;
-  if (byo.count() < 1) return;
+  if (byo.count() < autoStartMinQueue(cfg)) return;
   const secs = Math.max(5, cfg.auto_start_seconds);
   countdownEndsAt = Date.now() + secs * 1000;
   autoStartTimer = setTimeout(fireAutoStart, secs * 1000);
@@ -86,11 +91,14 @@ function cancelAutoStart(): void {
 function fireAutoStart(): void {
   autoStartTimer = null;
   countdownEndsAt = null;
-  if (running || replaying || byo.count() < 1) {
+  const cfg = safeLoadConfig();
+  // Re-check the queue at fire time (an agent may have been removed during the
+  // countdown) so we never auto-start an under-filled, host-funded game.
+  if (running || replaying || !cfg || byo.count() < autoStartMinQueue(cfg)) {
     broadcastLobby();
     return;
   }
-  startGame().catch((err) => {
+  startGame({ autoStarted: true }).catch((err) => {
     console.error("[auto] start failed:", err);
     hub.broadcast({ type: "error", message: String(err) });
   });
@@ -128,7 +136,7 @@ function broadcastScoreboard(): void {
 
 // ---------------- Game lifecycle ----------------
 
-async function startGame(): Promise<void> {
+async function startGame(opts: { autoStarted?: boolean } = {}): Promise<void> {
   cancelAutoStart(); // a game is starting — clear any pending countdown
   const config = loadConfig(CONFIG_PATH);
   if (config.play_mode && !humanClaim) {
@@ -137,16 +145,19 @@ async function startGame(): Promise<void> {
 
   const agentSeats = config.players - (config.play_mode ? 1 : 0);
 
-  // A random subset of the queued agents is drawn for this game (each with its
-  // own model + key); config personas fill any remaining seats with the host's
-  // default model. The queue is NOT consumed — drawn agents stay queued.
+  // A random subset of the queued agents is drawn (each with its own model + key);
+  // they're removed from the queue. Empty seats may be filled from config personas
+  // on the HOST's key — but only for manual (operator) starts, or when host-fill
+  // is explicitly enabled. An auto-started game never spends the host key, so an
+  // anonymous submitter can't trigger games billed to you.
+  const allowHostFill = !opts.autoStarted || config.auto_start_host_fill;
   type AgentDef = { persona: Persona; llm: LLMConfig };
   const drawn = byo.draw(agentSeats); // removes them from the queue
   const submittedDefs: AgentDef[] = drawn.map((s) => ({ persona: s.persona, llm: s.llm }));
   if (drawn.length) broadcastSubmissions(); // queue shrank — update the dashboard
 
   const usedNames = new Set(submittedDefs.map((d) => d.persona.name));
-  const fillNeeded = Math.max(0, agentSeats - submittedDefs.length);
+  const fillNeeded = allowHostFill ? Math.max(0, agentSeats - submittedDefs.length) : 0;
   const configPool: AgentDef[] = config.agents
     .map((entry, i) => ({
       persona: loadPersona(path.join(ROOT, entry.file), i),
@@ -157,7 +168,9 @@ async function startGame(): Promise<void> {
 
   if (agentDefs.length < agentSeats) {
     throw new Error(
-      `need ${agentSeats} players but only ${agentDefs.length} available — add submissions or more personas to config.yaml`,
+      opts.autoStarted
+        ? `auto-start needs ${agentSeats} queued agents (have ${agentDefs.length}); host-key fill is disabled`
+        : `need ${agentSeats} players but only ${agentDefs.length} available — add submissions or more personas to config.yaml`,
     );
   }
   // Guard against the human reusing an agent name (names are identity).
@@ -265,7 +278,9 @@ async function startGame(): Promise<void> {
 // ---------------- HTTP ----------------
 
 const app = express();
-app.set("trust proxy", true); // real client IP behind Fly's proxy (for rate limiting)
+// Trust exactly one proxy hop (Fly's edge). `true` would trust a client-supplied
+// X-Forwarded-For, letting attackers spoof IPs to evade the rate limiter.
+app.set("trust proxy", 1);
 app.use(express.json({ limit: "64kb" })); // bound request bodies (personas are small)
 
 // Operator guard for host-only endpoints; rate limiter for the public BYO endpoints.
@@ -324,10 +339,10 @@ app.post("/api/credential/openrouter/start", byoLimit, (req, res) => {
 });
 
 /** OAuth redirect target: exchange the code for a user-scoped key, server-side. */
-app.get("/api/credential/openrouter/callback/:keyRef", async (req, res) => {
-  const { keyRef } = req.params;
+app.get("/api/credential/openrouter/callback/:keyRef", byoLimit, async (req, res) => {
+  const keyRef = String(req.params.keyRef);
   const code = String(req.query.code ?? "");
-  const verifier = byo.getVerifier(keyRef);
+  const verifier = byo.takeVerifier(keyRef); // one-shot — a replayed callback gets null
   if (!code || !verifier) {
     res.status(400).send(popupHtml("❌ Authorization failed."));
     return;

@@ -123,13 +123,20 @@ A contributor:
    per join, then re-joins to play again. Any seats not filled by the queue come
    from your `config.yaml` personas. Remove any with ✕.
 
-**Auto-start:** with `auto_start: true` (default), the moment at least one queued
-agent is waiting, a countdown begins (`auto_start_seconds`, default 60) and a game
-auto-starts when it hits zero — so a stream runs itself off the queue. The host can
-still hit **Start now** to go immediately. Auto-start is disabled while `play_mode`
-is on (a human seat needs a manual start). Queued agents are swept after ~2h idle;
-since the queue holds a contributor's key in memory until they're drawn, prefer the
-OpenRouter-OAuth path over pasted keys for a public queue.
+**Auto-start:** with `auto_start: true` (default), once the queue holds a **full
+table** of bring-your-own agents, a countdown begins (`auto_start_seconds`, default
+60) and a game auto-starts — so a stream runs itself off the queue, and every seat
+is funded by the contributor who queued it. The host can still hit **Start now** to
+play immediately (filling empty seats with config personas on the host key — an
+operator-gated, deliberate spend). Auto-start is disabled while `play_mode` is on.
+
+> **Spend safety:** auto-started games never bill the host key — that's why they
+> require a full BYO table rather than firing on a single submit. Setting
+> `auto_start_host_fill: true` relaxes this (auto-start fills empty seats on your
+> key); only do that on a trusted/private setup, or an anonymous submitter can run
+> games on your dime. Queued agents are swept after ~2h idle; since the queue holds
+> a contributor's key in memory until they're drawn, prefer the OpenRouter-OAuth
+> path over pasted keys for a public queue.
 
 ### Global leaderboard
 

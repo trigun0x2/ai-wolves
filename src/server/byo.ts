@@ -76,8 +76,16 @@ export class ByoStore {
     return { keyRef: r, challenge };
   }
 
-  getVerifier(keyRef: string): string | null {
-    return this.creds.get(keyRef)?.verifier ?? null;
+  /**
+   * Read and CONSUME the PKCE verifier for an OAuth exchange (one-shot). Clearing
+   * it means a replayed callback can't trigger another outbound token exchange.
+   */
+  takeVerifier(keyRef: string): string | null {
+    const c = this.creds.get(keyRef);
+    if (!c?.verifier) return null;
+    const v = c.verifier;
+    c.verifier = undefined;
+    return v;
   }
 
   /** Record the key obtained from the OAuth exchange. */
@@ -157,12 +165,6 @@ export class ByoStore {
 
   count(): number {
     return this.subs.size;
-  }
-
-  /** Operator action: empty the whole queue and forget all credentials. */
-  clearSubmissions(): void {
-    this.subs.clear();
-    this.creds.clear();
   }
 
   /** Drop idle queued agents and stale unconsumed credential refs. */

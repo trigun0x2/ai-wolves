@@ -31,11 +31,15 @@ spoiler_panel_default: false
 play_mode: false
 human_turn_timeout_ms: 75000
 
-# Auto-start a game once at least one external agent is in the queue (from #/bring),
-# after a countdown. Drawn agents are removed from the queue after they play.
-# Disabled automatically when play_mode is on (a human seat needs a manual start).
+# Auto-start a game off the queue (from #/bring) after a countdown. Drawn agents
+# are removed after they play. Disabled when play_mode is on (human needs manual start).
 auto_start: true
 auto_start_seconds: 60
+# SECURITY: when false (default), auto-started games only fire with a FULL queue of
+# bring-your-own agents, so they never spend the host's API key — an anonymous
+# submitter can't trigger games billed to you. Set true only on a trusted/private
+# setup to let auto-start fill empty seats with config personas on your key.
+auto_start_host_fill: false
 
 # Default model for every agent. effort: low keeps the table chatty and cheap-ish;
 # raise to medium/high for sweatier play. thinking: false for models without
