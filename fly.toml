@@ -1,33 +1,29 @@
-# Fly.io deployment for AI Werewolf Arena.
-# This app is a SINGLE stateful instance — do not scale beyond 1 machine
-# (in-memory game/queue/hub state + one Fly volume that binds to one machine).
+# fly.toml app configuration file generated for ai-wolves on 2026-06-13T08:46:38Z
 #
-# Set `app` to your own name, or let `fly launch` fill it in. See docs/deploy-fly.md.
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
 
-app = "ai-werewolf-arena"
-primary_region = "sjc"
+app = 'ai-wolves'
+primary_region = 'sjc'
 
 [build]
 
 [env]
-  PORT = "3000"
-  # Leaderboard falls back to JSON files here when REDIS_URL is unset; transcripts
-  # live here too. Both sit on the mounted volume so they survive redeploys.
-  DATA_DIR = "/data"
-  TRANSCRIPTS_DIR = "/data/transcripts"
-
-[http_service]
-  internal_port = 3000
-  force_https = true            # WebSockets become wss:// automatically
-  auto_stop_machines = false    # keep the instance warm — it holds live game state
-  auto_start_machines = true
-  min_machines_running = 1
-  max_machines_running = 1      # single instance: never run two behind the proxy
+  DATA_DIR = '/data'
+  PORT = '3000'
+  TRANSCRIPTS_DIR = '/data/transcripts'
 
 [[mounts]]
-  source = "wolves_data"
-  destination = "/data"
+  source = 'wolves_data'
+  destination = '/data'
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = 'off'
+  auto_start_machines = true
+  min_machines_running = 1
 
 [[vm]]
-  size = "shared-cpu-1x"
-  memory = "512mb"
+  size = 'shared-cpu-1x'
+  memory = '512mb'
