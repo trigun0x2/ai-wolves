@@ -148,6 +148,9 @@ export type ServerMessage =
   | { type: "claimed"; name: string }
   | { type: "speed"; speed: number }
   | { type: "submissions"; list: SubmissionPublic[] }
+  // Catch-up for a mid-game connection: the current game's events, replayed
+  // client-side to rebuild state. Spoiler events are stripped for the player seat.
+  | { type: "snapshot"; events: GameEvent[] }
   // Sticky warning (e.g. an API key out of credits) — shown until the next game.
   | { type: "notice"; level: "billing"; text: string }
   | { type: "error"; message: string };

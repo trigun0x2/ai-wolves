@@ -63,6 +63,19 @@ export class Hub {
   }
 
   /**
+   * Catch a connection up on the in-progress game (after its channel is known).
+   * Spoiler events (deal/night actions) are stripped for the player seat so the
+   * human never receives other players' cards.
+   */
+  async sendSnapshot(ws: WebSocket, channel: Channel): Promise<void> {
+    const events = await this.bus.getSnapshot();
+    if (events.length === 0) return;
+    const filtered =
+      channel === "player" ? events.filter((e) => !SPOILER_EVENTS.has(e.type)) : events;
+    this.send(ws, { type: "snapshot", events: filtered });
+  }
+
+  /**
    * Prime a newly-connected socket. If this instance's cache is still empty (a
    * gateway that booted before the primary wrote retained state), re-read it from
    * the bus first so the client isn't left with a blank dashboard.

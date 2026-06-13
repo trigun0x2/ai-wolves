@@ -44,6 +44,9 @@ const TRANSCRIPTS_DIR = process.env.TRANSCRIPTS_DIR || path.join(ROOT, "transcri
 
 // Assigned in the async bootstrap (needs the bus). Used only at runtime.
 let hub!: Hub;
+let bus!: import("./bus").Bus;
+// Current game's events, so a mid-game connection can be caught up (primary only).
+let liveEvents: GameEvent[] = [];
 
 // ---------------- Server state ----------------
 let running = false;
@@ -277,6 +280,9 @@ async function startGame(opts: { autoStarted?: boolean } = {}): Promise<void> {
 
   const emit = async (ev: GameEvent) => {
     events.push({ t: Date.now(), ev });
+    if (ev.type === "game_start") liveEvents = []; // fresh game — drop the prior log
+    liveEvents.push(ev);
+    bus.setSnapshot(liveEvents); // keep the mid-game catch-up current
     hub.broadcastEvent(ev);
     await paceFor(ev, config.pacing.message_delay_ms, speed);
   };
@@ -517,7 +523,7 @@ app.post("/api/replay", op, (req, res) => {
   replaying = true;
   broadcastLobby();
   const delay = safeLoadConfig()?.pacing.message_delay_ms ?? 2500;
-  runReplay(TRANSCRIPTS_DIR, file, hub, delay, () => speed)
+  runReplay(TRANSCRIPTS_DIR, file, hub, delay, () => speed, (evs) => bus.setSnapshot(evs))
     .catch((err) => hub.broadcast({ type: "error", message: String(err) }))
     .finally(() => {
       replaying = false;
@@ -564,6 +570,8 @@ wss.on("connection", (ws) => {
       case "hello": {
         hub.setChannel(client, msg.channel);
         hub.setOperator(client, isOperator(OPERATOR_TOKEN, msg.token));
+        // Catch a mid-game connection up on the current game (channel-filtered).
+        void hub.sendSnapshot(ws, msg.channel);
         if (msg.channel === "player" && humanClaim) {
           hub.send(ws, { type: "claimed", name: humanClaim.name });
         }
@@ -611,7 +619,7 @@ wss.on("connection", (ws) => {
 });
 
 // Bootstrap: wire the bus + hub, connect the durable store, then listen.
-const bus = await createBus(process.env.REDIS_URL);
+bus = await createBus(process.env.REDIS_URL);
 hub = new Hub(bus);
 await hub.prime(); // load retained sticky state (e.g. a gateway joining mid-game)
 leaderboard = new Leaderboard(await createStore());

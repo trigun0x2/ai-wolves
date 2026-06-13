@@ -25,7 +25,7 @@ pacing:
 
 # Whether the dashboard's GM/spoiler panel starts open. Spoiler data is only
 # rendered when the panel is on — toggle it off-capture if you want a clean feed.
-spoiler_panel_default: false
+spoiler_panel_default: true
 
 # Set true to reserve one seat for a human (claimed at http://localhost:3000/#/play).
 play_mode: false

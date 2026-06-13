@@ -1,5 +1,5 @@
 import { createClient, type RedisClientType } from "redis";
-import type { ServerMessage } from "../shared/types";
+import type { GameEvent, ServerMessage } from "../shared/types";
 
 /**
  * Outbound message bus for fanning ServerMessages to WebSocket clients across
@@ -34,6 +34,13 @@ export interface Bus {
   onMessage(handler: (env: Envelope) => void): void;
   /** Latest retained sticky messages (to prime an instance / a new connection). */
   retained(): Promise<Envelope[]>;
+  /**
+   * Current-game event log (set by the primary, read by any instance) so a
+   * mid-game spectator can be caught up on connect. Not delivered live — fetched
+   * once per connection. Never holds keys; just the public event stream.
+   */
+  setSnapshot(events: GameEvent[]): void;
+  getSnapshot(): Promise<GameEvent[]>;
   close(): Promise<void>;
 }
 
@@ -51,6 +58,13 @@ export class LocalBus implements Bus {
   }
   async retained(): Promise<Envelope[]> {
     return [...this.store.values()];
+  }
+  private snapshot: GameEvent[] = [];
+  setSnapshot(events: GameEvent[]): void {
+    this.snapshot = events;
+  }
+  async getSnapshot(): Promise<GameEvent[]> {
+    return this.snapshot;
   }
   async close(): Promise<void> {}
 }
@@ -99,6 +113,15 @@ export class RedisBus implements Bus {
     const keys = [...RETAINED_TYPES].map(retainedKey);
     const vals = await this.pub.mGet(keys);
     return vals.filter((v): v is string => !!v).map((v) => JSON.parse(v) as Envelope);
+  }
+  setSnapshot(events: GameEvent[]): void {
+    this.pub.set("aiwolves:snapshot", JSON.stringify(events)).catch((e) =>
+      console.error("[bus] snapshot set:", e),
+    );
+  }
+  async getSnapshot(): Promise<GameEvent[]> {
+    const v = await this.pub.get("aiwolves:snapshot");
+    return v ? (JSON.parse(v) as GameEvent[]) : [];
   }
   async close(): Promise<void> {
     await this.sub.quit();

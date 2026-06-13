@@ -227,6 +227,10 @@ function reducer(state: UiState, action: Action): UiState {
       return { ...state, speed: msg.speed };
     case "submissions":
       return { ...state, submissions: msg.list };
+    case "snapshot":
+      // Catch-up for a mid-game connection: replay the current game's events
+      // through the same handler used for live events to rebuild state.
+      return msg.events.reduce(onEvent, state);
     case "notice":
       return { ...state, notice: msg.text };
     case "error":

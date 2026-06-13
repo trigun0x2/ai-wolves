@@ -25,6 +25,7 @@ export async function runReplay(
   hub: Hub,
   messageDelayMs: number,
   getSpeed: () => number = () => 1,
+  setSnapshot: (events: GameEvent[]) => void = () => {},
 ): Promise<void> {
   const safe = path.basename(file);
   const full = path.join(dir, safe);
@@ -32,7 +33,11 @@ export async function runReplay(
     events: TranscriptEventEntry[];
   };
   if (!Array.isArray(data.events)) throw new Error(`${safe} has no events array`);
+  const replayed: GameEvent[] = [];
   for (const { ev } of data.events) {
+    if (ev.type === "game_start") replayed.length = 0;
+    replayed.push(ev);
+    setSnapshot([...replayed]); // keep mid-replay catch-up current
     hub.broadcastEvent(ev);
     await paceFor(ev, messageDelayMs, getSpeed());
   }
