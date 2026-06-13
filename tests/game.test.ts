@@ -45,6 +45,7 @@ function makeConfig(players: number, roles: Role[]): GameConfig {
     auto_start: false,
     auto_start_seconds: 60,
     auto_start_host_fill: false,
+    host_game_hourly_cap: 5,
     default_llm: { provider: "anthropic", model: "claude-opus-4-8" },
     agents: [],
   };

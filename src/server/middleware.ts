@@ -31,6 +31,15 @@ export function requireOperator(getConfigured: () => string | undefined): Reques
   };
 }
 
+/**
+ * Prune timestamps older than `windowMs` (mutates `timestamps`) and return how
+ * many remain — a rolling-window counter for the host-funded game cap.
+ */
+export function withinWindowCount(timestamps: number[], now: number, windowMs: number): number {
+  while (timestamps.length && now - timestamps[0] > windowMs) timestamps.shift();
+  return timestamps.length;
+}
+
 interface Bucket {
   count: number;
   resetAt: number;

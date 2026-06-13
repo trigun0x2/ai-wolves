@@ -47,6 +47,8 @@ export interface GameConfig {
    * (operator) starts always allow host fill.
    */
   auto_start_host_fill: boolean;
+  /** Max host-funded games (seating config personas on the host key) per rolling hour. */
+  host_game_hourly_cap: number;
   default_llm: LLMConfig;
   agents: AgentEntry[];
 }
@@ -124,6 +126,7 @@ export function loadConfig(path: string): GameConfig {
     auto_start: raw.auto_start ?? true,
     auto_start_seconds: raw.auto_start_seconds ?? 60,
     auto_start_host_fill: raw.auto_start_host_fill ?? false,
+    host_game_hourly_cap: raw.host_game_hourly_cap ?? 5,
     default_llm: raw.default_llm ?? { provider: "anthropic", model: "claude-opus-4-8" },
     agents: raw.agents ?? [],
   };

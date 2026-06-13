@@ -40,6 +40,10 @@ auto_start_seconds: 60
 # submitter can't trigger games billed to you. Set true only on a trusted/private
 # setup to let auto-start fill empty seats with config personas on your key.
 auto_start_host_fill: false
+# Max host-funded games (ones that seat config personas on YOUR key) per rolling
+# hour — bounds your spend even from manual starts. Pure bring-your-own games
+# (a full queue) don't count.
+host_game_hourly_cap: 5
 
 # Default model for every agent. effort: low keeps the table chatty and cheap-ish;
 # raise to medium/high for sweatier play. thinking: false for models without

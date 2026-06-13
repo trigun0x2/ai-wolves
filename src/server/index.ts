@@ -21,7 +21,8 @@ import { ByoStore } from "./byo";
 import { Leaderboard } from "./leaderboard";
 import { createStore } from "./store";
 import { validateSubmittedPersona, LIMITS } from "./validation";
-import { requireOperator, rateLimit, isOperator } from "./middleware";
+import { requireOperator, rateLimit, isOperator, withinWindowCount } from "./middleware";
+import { looksLikeBillingError } from "../llm/errors";
 
 const PORT = Number(process.env.PORT ?? 3000);
 const ROOT = process.cwd();
@@ -48,6 +49,10 @@ let leaderboard!: Leaderboard;
 // Auto-start countdown state.
 let autoStartTimer: ReturnType<typeof setTimeout> | null = null;
 let countdownEndsAt: number | null = null;
+
+// Start times of host-funded games (rolling 1h window) for the spend cap.
+const HOUR_MS = 60 * 60 * 1000;
+const hostGameStarts: number[] = [];
 
 // Bring-your-own players (in-memory; keys never persisted or logged).
 const byo = new ByoStore();
@@ -151,6 +156,16 @@ async function startGame(opts: { autoStarted?: boolean } = {}): Promise<void> {
   // is explicitly enabled. An auto-started game never spends the host key, so an
   // anonymous submitter can't trigger games billed to you.
   const allowHostFill = !opts.autoStarted || config.auto_start_host_fill;
+  // A host-funded game seats config personas on the host key (queue can't fill
+  // every seat). Cap those per rolling hour so spend is bounded. Checked BEFORE
+  // drawing so a refusal doesn't consume the queue.
+  const hostFunded = allowHostFill && byo.count() < agentSeats;
+  if (hostFunded && withinWindowCount(hostGameStarts, Date.now(), HOUR_MS) >= config.host_game_hourly_cap) {
+    throw new Error(
+      `hourly host-funded game cap reached (${config.host_game_hourly_cap}/h) — queue bring-your-own agents or wait`,
+    );
+  }
+
   type AgentDef = { persona: Persona; llm: LLMConfig };
   const drawn = byo.draw(agentSeats); // removes them from the queue
   const submittedDefs: AgentDef[] = drawn.map((s) => ({ persona: s.persona, llm: s.llm }));
@@ -200,6 +215,23 @@ async function startGame(opts: { autoStarted?: boolean } = {}): Promise<void> {
   const events: TranscriptEventEntry[] = [];
   const allNames = seated.map((s) => (s.kind === "agent" ? s.persona.name : s.name));
 
+  // Warn (once per scope, per game) when an agent's API key looks out of credits.
+  // Host-funded seats (no per-seat key → host's env key) get an urgent warning.
+  const warned = new Set<string>();
+  const onAgentLog =
+    (agentName: string, hostKey: boolean) => (entry: LLMCallLog) => {
+      llmLog.push(entry);
+      if (!entry.error || !looksLikeBillingError(entry.error)) return;
+      const scope = hostKey ? "host" : `byo:${agentName}`;
+      if (warned.has(scope)) return;
+      warned.add(scope);
+      const text = hostKey
+        ? `⚠️ The HOST API key looks out of credits/tokens — agents are failing (e.g. ${agentName}). Top up to keep games running.`
+        : `⚠️ ${agentName}'s API key looks out of credits — that seat is passing this game.`;
+      console.warn("[billing]", text);
+      hub.broadcast({ type: "notice", level: "billing", text });
+    };
+
   const sessions: AgentSession[] = [];
   const controllers: PlayerController[] = seated.map((s, seat) => {
     if (s.kind === "human") {
@@ -227,7 +259,7 @@ async function startGame(opts: { autoStarted?: boolean } = {}): Promise<void> {
       profile,
       buildSystemPrompt(s.persona, others, config),
       createProvider(s.llm),
-      (entry) => llmLog.push(entry),
+      onAgentLog(s.persona.name, !s.llm.apiKey), // no per-seat key → host's env key
     );
     sessions.push(session);
     return session;
@@ -239,9 +271,13 @@ async function startGame(opts: { autoStarted?: boolean } = {}): Promise<void> {
     await paceFor(ev, config.pacing.message_delay_ms, speed);
   };
 
+  if (hostFunded) hostGameStarts.push(Date.now()); // count toward the hourly cap
   running = true;
   broadcastLobby();
-  console.log(`[game] starting ${gameId} with ${controllers.length} players`);
+  console.log(
+    `[game] starting ${gameId} with ${controllers.length} players` +
+      (hostFunded ? ` (host-funded — ${withinWindowCount(hostGameStarts, Date.now(), HOUR_MS)}/${config.host_game_hourly_cap} this hour)` : ""),
+  );
   try {
     const game = new Game({ config, controllers, emit, gameId });
     const reveal = await game.run();
@@ -428,6 +464,15 @@ app.post("/api/start", op, (_req, res) => {
     const cfg = loadConfig(CONFIG_PATH);
     if (cfg.play_mode && !humanClaim) {
       res.status(409).json({ error: "waiting for the human to claim a seat at /play" });
+      return;
+    }
+    // Surface the host-game cap immediately (a manual start always allows host fill).
+    const agentSeats = cfg.players - (cfg.play_mode ? 1 : 0);
+    const hostFunded = byo.count() < agentSeats;
+    if (hostFunded && withinWindowCount(hostGameStarts, Date.now(), HOUR_MS) >= cfg.host_game_hourly_cap) {
+      res.status(429).json({
+        error: `hourly host-funded game cap reached (${cfg.host_game_hourly_cap}/h) — queue bring-your-own agents or wait`,
+      });
       return;
     }
   } catch (err) {

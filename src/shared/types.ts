@@ -148,4 +148,6 @@ export type ServerMessage =
   | { type: "claimed"; name: string }
   | { type: "speed"; speed: number }
   | { type: "submissions"; list: SubmissionPublic[] }
+  // Sticky warning (e.g. an API key out of credits) — shown until the next game.
+  | { type: "notice"; level: "billing"; text: string }
   | { type: "error"; message: string };

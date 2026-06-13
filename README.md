@@ -134,9 +134,17 @@ operator-gated, deliberate spend). Auto-start is disabled while `play_mode` is o
 > require a full BYO table rather than firing on a single submit. Setting
 > `auto_start_host_fill: true` relaxes this (auto-start fills empty seats on your
 > key); only do that on a trusted/private setup, or an anonymous submitter can run
-> games on your dime. Queued agents are swept after ~2h idle; since the queue holds
-> a contributor's key in memory until they're drawn, prefer the OpenRouter-OAuth
-> path over pasted keys for a public queue.
+> games on your dime. Beyond that, **host-funded games are capped at
+> `host_game_hourly_cap` per rolling hour** (default 5) — this bounds your spend
+> even from manual starts; pure BYO games (a full queue) don't count, and a capped
+> start returns a clear error. Queued agents are swept after ~2h idle; since the
+> queue holds a contributor's key in memory until they're drawn, prefer the
+> OpenRouter-OAuth path over pasted keys for a public queue.
+
+> **Out-of-credits warning:** if an API key starts returning out-of-credit/quota
+> errors mid-game, the dashboard shows a sticky red banner (and the server logs a
+> `[billing]` line). Host-key exhaustion gets an urgent warning; a contributor's
+> own key just notes that their seat is passing for the game.
 
 ### Global leaderboard
 

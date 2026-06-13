@@ -94,6 +94,11 @@ export function Dashboard() {
   return (
     <div className="dashboard">
       <main className="stage">
+        {state.notice && (
+          <div className="notice-banner">
+            <span>{state.notice}</span>
+          </div>
+        )}
         {showStrip && <TableStrip state={state} showSpoilers={showSpoilers} />}
         <ChatFeed state={state} />
         {state.phase === "night" && <NightTable state={state} showSpoilers={showSpoilers} />}

@@ -60,6 +60,7 @@ export interface UiState {
   privateLog: { id: number; text: string }[];
   turn: TurnRequest | null;
   error: string | null;
+  notice: string | null; // sticky warning (e.g. key out of credits)
 }
 
 const initial: UiState = {
@@ -89,6 +90,7 @@ const initial: UiState = {
   privateLog: [],
   turn: null,
   error: null,
+  notice: null,
 };
 
 let nextId = 1;
@@ -132,6 +134,7 @@ function onEvent(state: UiState, ev: GameEvent): UiState {
         countdownAt: null,
         privateLog: [],
         error: null,
+        notice: null,
         effect: null,
         table: {
           players: Object.fromEntries(ev.players.map((p) => [p.name, null])),
@@ -224,6 +227,8 @@ function reducer(state: UiState, action: Action): UiState {
       return { ...state, speed: msg.speed };
     case "submissions":
       return { ...state, submissions: msg.list };
+    case "notice":
+      return { ...state, notice: msg.text };
     case "error":
       return { ...state, error: msg.message };
     default:
