@@ -1386,6 +1386,23 @@ select {
   padding: 8px 0;
 }
 
+/* quiet text link for the credential-method switch (not a CTA) */
+.link-toggle {
+  display: block;
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 13.5px;
+  cursor: pointer;
+  padding: 9px 2px 0;
+  text-align: left;
+}
+
+.link-toggle:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+
 .btn.big {
   width: 100%;
   padding: 14px;

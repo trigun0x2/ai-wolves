@@ -304,48 +304,53 @@ export function BringPlayer() {
           )}
 
           <div className="panel-title sub">Credential</div>
-          {provider === "openrouter" && (
-            <div className="seg">
-              <button
-                className={`btn seg-btn ${credMode === "openrouter-oauth" ? "sel" : ""}`}
-                onClick={() => {
-                  setCredMode("openrouter-oauth");
-                  resetCred();
-                }}
-              >
-                Connect via OAuth (recommended)
+          {keyRef ? (
+            <div className="connected">✅ connected — ready to submit</div>
+          ) : provider === "openrouter" && credMode === "openrouter-oauth" ? (
+            <>
+              <button className="btn primary" disabled={connecting} onClick={connectOpenRouter}>
+                {connecting ? "waiting for authorization…" : "🔗 Connect OpenRouter"}
               </button>
               <button
-                className={`btn seg-btn ${credMode === "paste" ? "sel" : ""}`}
+                className="link-toggle"
                 onClick={() => {
                   setCredMode("paste");
                   resetCred();
                 }}
               >
-                Paste key
+                or paste an API key instead
               </button>
-            </div>
-          )}
-
-          {keyRef ? (
-            <div className="connected">✅ connected — ready to submit</div>
-          ) : credMode === "openrouter-oauth" ? (
-            <button className="btn primary" disabled={connecting} onClick={connectOpenRouter}>
-              {connecting ? "waiting for authorization…" : "🔗 Connect OpenRouter"}
-            </button>
+            </>
           ) : (
-            <div className="field-row">
-              <input
-                className="in"
-                type="password"
-                placeholder={`Paste your ${provider} API key`}
-                value={rawKey}
-                onChange={(e) => setRawKey(e.target.value)}
-              />
-              <button className="btn primary" disabled={connecting || !rawKey.trim()} onClick={connectRawKey}>
-                Connect
-              </button>
-            </div>
+            <>
+              <div className="field-row">
+                <input
+                  className="in"
+                  type="password"
+                  placeholder={`Paste your ${provider} API key`}
+                  value={rawKey}
+                  onChange={(e) => setRawKey(e.target.value)}
+                />
+                <button
+                  className="btn primary"
+                  disabled={connecting || !rawKey.trim()}
+                  onClick={connectRawKey}
+                >
+                  Connect
+                </button>
+              </div>
+              {provider === "openrouter" && (
+                <button
+                  className="link-toggle"
+                  onClick={() => {
+                    setCredMode("openrouter-oauth");
+                    resetCred();
+                  }}
+                >
+                  ← use OpenRouter sign-in instead (recommended)
+                </button>
+              )}
+            </>
           )}
           <div className="hint">
             Your key is exchanged for a one-game token and held on the server — it never lands in
