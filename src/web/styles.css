@@ -1097,6 +1097,20 @@ select {
   border-left: 3px solid transparent;
 }
 
+.btn.add-player {
+  width: 100%;
+  margin-bottom: 10px;
+  background: var(--bg-3);
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.btn.add-player:hover {
+  background: var(--accent);
+  color: #1a1206;
+}
+
 .sub-row.queued {
   border-left-color: #6b8cce;
 }

@@ -12,6 +12,30 @@ type CredMode = "openrouter-oauth" | "paste";
 
 const BODY_MAX = 4000;
 
+// Curated latest models per provider. "Other" reveals a free-text field for
+// anything not listed (OpenRouter has hundreds of slugs).
+const OTHER = "__other__";
+const MODELS: Record<Provider, { id: string; label: string }[]> = {
+  anthropic: [
+    { id: "claude-fable-5", label: "Claude Fable 5 — most capable" },
+    { id: "claude-opus-4-8", label: "Claude Opus 4.8" },
+    { id: "claude-opus-4-7", label: "Claude Opus 4.7" },
+    { id: "claude-sonnet-4-6", label: "Claude Sonnet 4.6" },
+    { id: "claude-haiku-4-5", label: "Claude Haiku 4.5 — fast" },
+  ],
+  openai: [
+    { id: "gpt-4.1", label: "GPT-4.1" },
+    { id: "gpt-4.1-mini", label: "GPT-4.1 mini" },
+  ],
+  openrouter: [
+    { id: "anthropic/claude-opus-4-8", label: "Claude Opus 4.8" },
+    { id: "anthropic/claude-sonnet-4-6", label: "Claude Sonnet 4.6" },
+    { id: "openai/gpt-4.1", label: "GPT-4.1" },
+    { id: "meta-llama/llama-3.3-70b-instruct", label: "Llama 3.3 70B" },
+    { id: "deepseek/deepseek-chat", label: "DeepSeek Chat" },
+  ],
+};
+
 const EXAMPLE = `## Persona
 A 31-year-old barista who treats werewolf like latte art — calm, precise, a little smug. Types in lowercase, over-uses "honestly".
 
@@ -29,7 +53,7 @@ export function BringPlayer() {
 
   // model + credential
   const [provider, setProvider] = useState<Provider>("openrouter");
-  const [model, setModel] = useState("");
+  const [model, setModel] = useState(MODELS.openrouter[0].id);
   const [credMode, setCredMode] = useState<CredMode>("openrouter-oauth");
   const [rawKey, setRawKey] = useState("");
   const [keyRef, setKeyRef] = useState<string | null>(null);
@@ -150,6 +174,8 @@ export function BringPlayer() {
     }
   };
 
+  const usingCustomModel = !MODELS[provider].some((m) => m.id === model);
+
   const modelPlaceholder =
     provider === "openrouter"
       ? "e.g. anthropic/claude-opus-4-8 or meta-llama/llama-3.3-70b-instruct"
@@ -246,6 +272,7 @@ export function BringPlayer() {
                 className={`btn seg-btn ${provider === p ? "sel" : ""}`}
                 onClick={() => {
                   setProvider(p);
+                  setModel(MODELS[p][0].id); // default to the latest for this provider
                   setCredMode(p === "openrouter" ? "openrouter-oauth" : "paste");
                   resetCred();
                 }}
@@ -254,12 +281,27 @@ export function BringPlayer() {
               </button>
             ))}
           </div>
-          <input
+          <select
             className="in"
-            placeholder={modelPlaceholder}
-            value={model}
-            onChange={(e) => setModel(e.target.value)}
-          />
+            style={{ marginBottom: 8 }}
+            value={usingCustomModel ? OTHER : model}
+            onChange={(e) => setModel(e.target.value === OTHER ? "" : e.target.value)}
+          >
+            {MODELS[provider].map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.label}
+              </option>
+            ))}
+            <option value={OTHER}>Other (enter a model id)…</option>
+          </select>
+          {usingCustomModel && (
+            <input
+              className="in"
+              placeholder={modelPlaceholder}
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+            />
+          )}
 
           <div className="panel-title sub">Credential</div>
           {provider === "openrouter" && (

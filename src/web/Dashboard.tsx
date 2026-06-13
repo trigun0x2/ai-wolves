@@ -458,10 +458,16 @@ function Submissions({ state, authed }: { state: UiState; authed: boolean }) {
   return (
     <section className="panel subs">
       <div className="panel-title">🎮 Agent queue ({list.length} waiting)</div>
+      <button
+        className="btn add-player"
+        onClick={() => window.open(`${location.origin}/#/bring`, "_blank", "noopener")}
+      >
+        ➕ Add a player
+      </button>
       {list.length === 0 ? (
         <div className="hint">
-          Share <code>#/bring</code> — viewers queue their own model + character. Each game draws{" "}
-          {seats || "N"} at random; any unfilled seats come from <code>config.yaml</code>.
+          Viewers add their own model + character. Each game draws {seats || "N"} at random; any
+          unfilled seats come from <code>config.yaml</code>.
         </div>
       ) : (
         <>
