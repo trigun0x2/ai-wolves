@@ -30,9 +30,14 @@ const refEq = (a: CardRef, b: CardRef) =>
   a.type === b.type &&
   (a.type === "player" ? a.name === (b as { name: string }).name : a.idx === (b as { idx: number }).idx);
 
+const isMobile = () =>
+  typeof window !== "undefined" && window.matchMedia("(max-width: 860px)").matches;
+
 export function Dashboard() {
   const { state, send } = useGame("spectator");
-  const [spoilers, setSpoilers] = useState<boolean | null>(null);
+  // Spoilers default OFF on a phone (casual spectator view); desktop/OBS keeps
+  // the config default. Either way the GM toggle still overrides.
+  const [spoilers, setSpoilers] = useState<boolean | null>(() => (isMobile() ? false : null));
   const [transcripts, setTranscripts] = useState<string[]>([]);
   const [banner, setBanner] = useState<string | null>(null);
   const [opOk, setOpOk] = useState<boolean | null>(null);
@@ -97,8 +102,20 @@ export function Dashboard() {
 
   const showStrip = state.phase === "day" || state.phase === "vote" || state.phase === "reveal";
 
+  // On mobile the night/vote/reveal overlays go full-screen; lock the page
+  // behind them so you can't scroll the sidebar into view mid-moment.
+  const overlayActive =
+    state.phase === "night" ||
+    state.countdownAt !== null ||
+    (!!state.votes && !state.reveal) ||
+    !!state.reveal;
+  useEffect(() => {
+    document.body.classList.toggle("overlay-open", overlayActive);
+    return () => document.body.classList.remove("overlay-open");
+  }, [overlayActive]);
+
   return (
-    <div className="dashboard">
+    <div className={`dashboard ${state.phase === "lobby" ? "is-lobby" : ""}`}>
       {showHelp && <HelpModal onClose={dismissHelp} />}
       <button className="help-fab" title="How it works" onClick={() => setShowHelp(true)}>
         ?
@@ -122,7 +139,6 @@ export function Dashboard() {
         <PhaseBanner state={state} />
         <Submissions state={state} authed={authed} />
         <Roster state={state} />
-        <Scoreboard state={state} />
         <section className="panel controls">
           <div className="panel-title">Control</div>
           {authRequired && <OperatorGate opOk={opOk} />}
@@ -189,6 +205,7 @@ export function Dashboard() {
           {banner && <div className="hint warn">{banner}</div>}
         </section>
         {showSpoilers && <GMPanel state={state} />}
+        <Scoreboard state={state} />
       </aside>
     </div>
   );
