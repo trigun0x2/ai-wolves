@@ -1577,3 +1577,118 @@ select {
     opacity: 1;
   }
 }
+
+/* ---------- responsive: phones & narrow tablets ----------
+   The dashboard is built for a wide 1920×1080 OBS capture: a flexible stage
+   beside a fixed 420px sidebar. On a phone that sidebar squeezes the stage
+   (where the conversation lives) to nothing, so stack everything vertically
+   and let the page scroll. Several overlays also hard-code desktop widths
+   that overflow a phone — relax those here too. */
+@media (max-width: 860px) {
+  body {
+    font-size: 16px;
+  }
+
+  .dashboard {
+    flex-direction: column;
+    height: auto;
+    min-height: 100vh;
+    gap: 12px;
+    padding: 10px;
+  }
+
+  /* The dialogue first and tall enough to read; the sidebar flows beneath it. */
+  .stage {
+    flex: none;
+    min-height: 62vh;
+  }
+
+  .sidebar {
+    width: 100%;
+    overflow-y: visible;
+  }
+
+  .chat-feed {
+    padding: 16px 16px 24px;
+  }
+
+  .msg {
+    max-width: 100%;
+  }
+
+  .msg-text {
+    font-size: 18px;
+  }
+
+  .empty-title h1 {
+    font-size: 32px;
+  }
+
+  /* Speaker spotlight: let seats wrap instead of overflowing off-screen. */
+  .table-strip {
+    flex-wrap: wrap;
+    padding: 10px 8px 6px;
+  }
+
+  /* Overlays sit inside the (now shorter) stage — tighten their spacing. */
+  .overlay {
+    padding: 18px 14px;
+    gap: 12px;
+  }
+
+  .countdown {
+    font-size: 84px;
+  }
+
+  /* Votes: stack the columns and drop the fixed min-widths that overflow. */
+  .vote-layout {
+    flex-direction: column;
+    gap: 16px;
+    align-items: stretch;
+  }
+
+  .vote-grid {
+    min-width: 0;
+  }
+
+  .vote-tally {
+    min-width: 0;
+  }
+
+  .vote-tile {
+    min-width: 0;
+    font-size: 16px;
+    padding: 7px 10px;
+  }
+
+  .vote-tile-avatar {
+    font-size: 20px;
+  }
+
+  .arrow.big {
+    margin: 0 6px;
+  }
+
+  .night-caption {
+    max-width: 100%;
+  }
+
+  /* Night cards: smaller so a full table fits a phone row. */
+  .pcard {
+    width: 78px;
+    height: 110px;
+  }
+
+  .pcard-emoji {
+    font-size: 34px;
+  }
+
+  .card-table {
+    gap: 18px;
+  }
+
+  /* Help modal sits flush to the screen edges on a phone. */
+  .help-card {
+    padding: 22px 18px;
+  }
+}
