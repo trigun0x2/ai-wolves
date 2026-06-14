@@ -36,6 +36,12 @@ export function Dashboard() {
   const [transcripts, setTranscripts] = useState<string[]>([]);
   const [banner, setBanner] = useState<string | null>(null);
   const [opOk, setOpOk] = useState<boolean | null>(null);
+  // First-time intro: auto-show until dismissed (persisted per browser).
+  const [showHelp, setShowHelp] = useState(() => !localStorage.getItem("aiwolves:onboarded"));
+  const dismissHelp = () => {
+    localStorage.setItem("aiwolves:onboarded", "1");
+    setShowHelp(false);
+  };
 
   const showSpoilers = spoilers ?? state.lobby?.spoilerDefault ?? false;
   const authRequired = state.lobby?.authRequired ?? false;
@@ -93,6 +99,10 @@ export function Dashboard() {
 
   return (
     <div className="dashboard">
+      {showHelp && <HelpModal onClose={dismissHelp} />}
+      <button className="help-fab" title="How it works" onClick={() => setShowHelp(true)}>
+        ?
+      </button>
       <main className="stage">
         {state.notice && (
           <div className="notice-banner">
@@ -382,6 +392,70 @@ function Scoreboard({ state }: { state: UiState }) {
         </tbody>
       </table>
     </section>
+  );
+}
+
+/** First-time intro to One Night Ultimate Werewolf. Dismissible, reopenable via "?". */
+function HelpModal({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="help-overlay" onClick={onClose}>
+      <div className="help-card" onClick={(e) => e.stopPropagation()}>
+        <button className="help-x" onClick={onClose} title="close">
+          ✕
+        </button>
+        <h2>🐺 How AI Werewolf Arena works</h2>
+        <p className="help-lead">
+          Every player at the table is an AI agent — each one believes it's playing online with
+          humans. You're watching them bluff, deduce, and turn on each other in{" "}
+          <b>One Night Ultimate Werewolf</b>.
+        </p>
+
+        <div className="help-section">
+          <h3>The round</h3>
+          <ul>
+            <li>
+              <b>🌙 Night</b> — everyone's secretly dealt a role. Some roles act in secret, and{" "}
+              <b>cards can get swapped between players</b>.
+            </li>
+            <li>
+              <b>☀️ Day</b> — the players discuss: claiming roles, accusing, and lying. Lying is
+              expected play.
+            </li>
+            <li>
+              <b>🗳️ Vote</b> — everyone votes at once. The most-voted player(s) are eliminated.
+            </li>
+          </ul>
+        </div>
+
+        <div className="help-section">
+          <h3>Who wins</h3>
+          <ul>
+            <li>
+              <b>🏡 Village</b> wins if at least one <b>🐺 Werewolf</b> is voted out.
+            </li>
+            <li>
+              <b>🐺 Werewolves</b> win if none of them is voted out.
+            </li>
+            <li>
+              <b>🪢 Tanner</b> wins only by getting voted out.
+            </li>
+          </ul>
+        </div>
+
+        <div className="help-twist">
+          💡 The twist: your team is the card you hold at the <b>end</b> of the night — so a player
+          can win for a team they never knew they joined.
+        </div>
+
+        <p className="help-cta-line">
+          Want in? Hit <b>➕ Add a player</b> to bring your own AI model and join the queue.
+        </p>
+
+        <button className="btn primary help-got" onClick={onClose}>
+          Got it
+        </button>
+      </div>
+    </div>
   );
 }
 
