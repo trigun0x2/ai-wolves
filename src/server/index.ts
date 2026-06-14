@@ -422,9 +422,9 @@ app.get("/api/credential/openrouter/callback/:keyRef", byoLimit, async (req, res
   }
 });
 
-/** Poll whether a credential ref now holds a key (used after OAuth). */
-app.get("/api/credential/status", (req, res) => {
-  res.json({ connected: byo.isReady(String(req.query.keyRef ?? "")) });
+/** Poll whether a credential ref now holds a key (used after OAuth + on restore). */
+app.get("/api/credential/status", async (req, res) => {
+  res.json({ connected: await byo.isReady(String(req.query.keyRef ?? "")) });
 });
 
 app.get("/api/submissions", (_req, res) => {
@@ -432,7 +432,7 @@ app.get("/api/submissions", (_req, res) => {
 });
 
 /** Submit a bring-your-own player: validated persona + a connected credential ref. */
-app.post("/api/submit", byoLimit, (req, res) => {
+app.post("/api/submit", byoLimit, async (req, res) => {
   if (running) {
     res.status(409).json({ error: "a game is in progress — try again after it ends" });
     return;
@@ -452,7 +452,7 @@ app.post("/api/submit", byoLimit, (req, res) => {
     return;
   }
   try {
-    const sub = byo.addSubmission(
+    const sub = await byo.addSubmission(
       v.persona,
       String(b.keyRef ?? ""),
       String(b.model ?? ""),
@@ -622,7 +622,9 @@ wss.on("connection", (ws) => {
 bus = await createBus(process.env.REDIS_URL);
 hub = new Hub(bus);
 await hub.prime(); // load retained sticky state (e.g. a gateway joining mid-game)
-leaderboard = new Leaderboard(await createStore());
+const store = await createStore();
+byo.attachStore(store); // persist OAuth credentials across restarts
+leaderboard = new Leaderboard(store);
 await leaderboard.init();
 
 // The primary owns game state — publish the initial sticky snapshot so the bus's

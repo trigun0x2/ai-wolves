@@ -442,5 +442,5 @@ export function sanitizeChat(raw: string | null, speaker: string): string {
   t = t.replace(prefix, "");
   const namePrefix = new RegExp(`^${speaker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*:\\s*`, "i");
   t = t.replace(namePrefix, "");
-  return t.slice(0, 600);
+  return t.slice(0, 400); // backstop cap if a model ignores the brevity prompt
 }

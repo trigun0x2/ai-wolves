@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import type { LLMConfig, ProviderName } from "../engine/config";
 import type { Persona } from "../agents/personas";
 import type { SubmissionPublic } from "../shared/types";
+import type { KvStore } from "./store";
 
 /**
  * In-memory queue for "bring your own player" agents.
@@ -16,13 +17,22 @@ import type { SubmissionPublic } from "../shared/types";
  *    not even for keys they typed (those are POSTed once and exchanged for a ref).
  *  - For OpenRouter OAuth, the key is fetched server-side and stashed under the
  *    same ref; it never transits the browser.
- *  - Nothing here is written to disk or logged. Entries are swept on an idle TTL
- *    (refreshed whenever an agent is drawn into a game), so a long-running queue
- *    drops only the agents that have gone quiet.
+ *  - The queue and pasted (raw) keys live ONLY in memory. OAuth credentials are
+ *    additionally persisted to the durable store (keyed by the opaque keyRef) so
+ *    a contributor stays connected across server restarts without re-authorizing
+ *    — these are user-scoped OpenRouter tokens, never the host key or a master key.
  */
 
 const CRED_TTL_MS = 30 * 60 * 1000; // unconsumed credential refs (pre-submit)
 const QUEUE_TTL_MS = 2 * 60 * 60 * 1000; // queued agents, refreshed on each draw
+const OAUTH_TTL_MS = 7 * 24 * 60 * 60 * 1000; // persisted OAuth credentials
+const oauthKey = (keyRef: string) => `oauth:${keyRef}`;
+
+interface StoredOAuth {
+  provider: ProviderName;
+  key: string;
+  createdAt: number;
+}
 
 interface Credential {
   provider: ProviderName;
@@ -58,6 +68,12 @@ export function pkce(): { verifier: string; challenge: string } {
 export class ByoStore {
   private creds = new Map<string, Credential>();
   private subs = new Map<string, SeatSubmission>();
+  private store?: KvStore;
+
+  /** Attach the durable store used to persist OAuth credentials across restarts. */
+  attachStore(store: KvStore): void {
+    this.store = store;
+  }
 
   // ---- credentials ----
 
@@ -88,29 +104,48 @@ export class ByoStore {
     return v;
   }
 
-  /** Record the key obtained from the OAuth exchange. */
+  /** Record the key obtained from the OAuth exchange (and persist it durably). */
   attachKey(keyRef: string, key: string): boolean {
     const c = this.creds.get(keyRef);
     if (!c) return false;
     c.key = key;
+    // Persist OAuth credentials so they survive restarts (scoped tokens only).
+    this.store
+      ?.setJson(oauthKey(keyRef), { provider: c.provider, key, createdAt: Date.now() } satisfies StoredOAuth)
+      .catch((e) => console.error("[byo] persist oauth:", e));
     return true;
   }
 
-  /** A credential is "ready" once it actually holds a key. */
-  isReady(keyRef: string): boolean {
-    return !!this.creds.get(keyRef)?.key;
+  /** A credential is "ready" once it holds a key — in memory or in durable storage. */
+  async isReady(keyRef: string): Promise<boolean> {
+    return !!(await this.resolve(keyRef));
   }
 
-  private resolve(keyRef: string): Credential | null {
-    const c = this.creds.get(keyRef);
-    return c?.key ? c : null;
+  /**
+   * Resolve a credential by ref: memory first, then the durable store (rehydrating
+   * a persisted OAuth credential into memory). Returns null if missing/expired.
+   */
+  private async resolve(keyRef: string): Promise<Credential | null> {
+    const mem = this.creds.get(keyRef);
+    if (mem?.key) return mem;
+    if (!this.store) return null;
+    const saved = await this.store.getJson<StoredOAuth>(oauthKey(keyRef));
+    if (!saved?.key || Date.now() - saved.createdAt > OAUTH_TTL_MS) return null;
+    const cred: Credential = { provider: saved.provider, key: saved.key, createdAt: saved.createdAt };
+    this.creds.set(keyRef, cred); // rehydrate for subsequent lookups
+    return cred;
   }
 
   // ---- submissions ----
 
   /** Build a submission from a validated persona + a ready credential ref. Throws on a bad ref. */
-  addSubmission(persona: Persona, keyRef: string, model: string, baseURL?: string): SeatSubmission {
-    const cred = this.resolve(keyRef);
+  async addSubmission(
+    persona: Persona,
+    keyRef: string,
+    model: string,
+    baseURL?: string,
+  ): Promise<SeatSubmission> {
+    const cred = await this.resolve(keyRef);
     if (!cred) throw new Error("credential not connected (connect your model first)");
     const llm: LLMConfig = {
       provider: cred.provider,

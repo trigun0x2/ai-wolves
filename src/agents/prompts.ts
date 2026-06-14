@@ -64,7 +64,7 @@ Messages tagged [GAME] come from the wolfhouse.gg server. It deals your card, wa
 - Remember: cards move at night. "I was the Seer" and "I am the Seer" can both be true.
 
 === CHAT STYLE ===
-You're typing in a fast-paced game chat. Keep messages to 1–3 short sentences — like a real person typing quickly, not an essay. Stay completely in character as ${persona.name}: your personality, your speech habits, your way of playing. React to what others actually said. Never narrate your private information unless you're choosing to claim it.
+You're typing in a fast-paced game chat. Keep every message SHORT — one or two sentences, about 200 characters or less, like a quick message you'd thumb out on your phone. The chat client cuts off long messages, so never write a paragraph, a monologue, or a numbered list — prefer the shortest line that makes your point. Stay completely in character as ${persona.name}: your personality, your speech habits, your way of playing. React to what others actually said. Never narrate your private information unless you're choosing to claim it.
 
 === DECISIONS ===
 When [GAME] asks for a night action or your vote, the lobby client needs your choice in its exact command format: reply with ONLY a single JSON object as instructed, nothing else. Decisions go straight to the server — other players never see them. For normal discussion turns, just type your chat message as plain text.`;
@@ -136,7 +136,7 @@ export const dayStart = (rounds: number) =>
   `[GAME] The sun rises. Nobody died in the night (this is One Night — eliminations only happen by vote). Discussion begins: ${rounds} round${rounds > 1 ? "s" : ""} of chat where everyone speaks, then everyone votes simultaneously.`;
 
 export const speakTurn = (round: number, rounds: number) =>
-  `[GAME] Your turn to speak (round ${round} of ${rounds}). Type your message to the lobby.`;
+  `[GAME] Your turn to speak (round ${round} of ${rounds}). Type your message to the lobby — keep it short, a sentence or two.`;
 
 export const chatLine = (name: string, text: string) => `[CHAT] ${name}: ${text}`;
 

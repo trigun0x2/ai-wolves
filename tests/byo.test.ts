@@ -59,14 +59,14 @@ describe("validateSubmittedPersona", () => {
 });
 
 describe("ByoStore", () => {
-  it("exchanges a raw key for a ref and resolves it into a submission llm", () => {
+  it("exchanges a raw key for a ref and resolves it into a submission llm", async () => {
     const store = new ByoStore();
     const keyRef = store.putRawKey("openai", "sk-secret", "gpt-4.1");
-    expect(store.isReady(keyRef)).toBe(true);
+    expect(await store.isReady(keyRef)).toBe(true);
 
     const v = validateSubmittedPersona({ name: "Bea", body: "a valid persona body" });
     if (!v.ok) throw new Error(v.error);
-    const sub = store.addSubmission(v.persona, keyRef, "gpt-4.1");
+    const sub = await store.addSubmission(v.persona, keyRef, "gpt-4.1");
     expect(sub.llm.provider).toBe("openai");
     expect(sub.llm.model).toBe("gpt-4.1");
     expect(sub.llm.apiKey).toBe("sk-secret");
@@ -77,30 +77,59 @@ describe("ByoStore", () => {
     expect(JSON.stringify(pub)).not.toContain("sk-secret");
   });
 
-  it("OAuth flow: verifier first, key attached on callback, then ready", () => {
+  it("OAuth flow: verifier first, key attached on callback, then ready", async () => {
     const store = new ByoStore();
     const { keyRef, challenge } = store.startOAuth();
     expect(challenge).toBeTruthy();
-    expect(store.isReady(keyRef)).toBe(false); // not ready until the exchange
+    expect(await store.isReady(keyRef)).toBe(false); // not ready until the exchange
 
     store.attachKey(keyRef, "sk-or-from-oauth");
-    expect(store.isReady(keyRef)).toBe(true);
+    expect(await store.isReady(keyRef)).toBe(true);
 
     const v = validateSubmittedPersona({ name: "Vee", body: "a valid persona body" });
     if (!v.ok) throw new Error(v.error);
-    const sub = store.addSubmission(v.persona, keyRef, "anthropic/claude-opus-4-8");
+    const sub = await store.addSubmission(v.persona, keyRef, "anthropic/claude-opus-4-8");
     expect(sub.llm.provider).toBe("openrouter");
     expect(sub.llm.apiKey).toBe("sk-or-from-oauth");
   });
 
-  it("rejects a submission with an unconnected credential ref", () => {
+  it("persists an OAuth credential across a restart via the durable store", async () => {
+    const { KvStore } = await import("./helpers");
+    const kv = new KvStore();
+
+    // First instance: attach a store, complete OAuth, persist the key.
+    const first = new ByoStore();
+    first.attachStore(kv);
+    const { keyRef } = first.startOAuth();
+    first.attachKey(keyRef, "sk-or-persisted");
+    expect(await first.isReady(keyRef)).toBe(true);
+
+    // Fresh instance (simulated restart) backed by the same durable store.
+    const second = new ByoStore();
+    second.attachStore(kv);
+    expect(await second.isReady(keyRef)).toBe(true); // rehydrated from storage
+
+    const v = validateSubmittedPersona({ name: "Restored", body: "a valid persona body" });
+    if (!v.ok) throw new Error(v.error);
+    const sub = await second.addSubmission(v.persona, keyRef, "anthropic/claude-opus-4-8");
+    expect(sub.llm.provider).toBe("openrouter");
+    expect(sub.llm.apiKey).toBe("sk-or-persisted");
+
+    // Raw pasted keys are NOT persisted — they stay in memory only.
+    const third = new ByoStore();
+    third.attachStore(kv);
+    const rawRef = first.putRawKey("openai", "sk-not-persisted");
+    expect(await third.isReady(rawRef)).toBe(false);
+  });
+
+  it("rejects a submission with an unconnected credential ref", async () => {
     const store = new ByoStore();
     const v = validateSubmittedPersona({ name: "Nope", body: "a valid persona body" });
     if (!v.ok) throw new Error(v.error);
-    expect(() => store.addSubmission(v.persona, "bogus-ref", "m")).toThrow();
+    await expect(store.addSubmission(v.persona, "bogus-ref", "m")).rejects.toThrow();
     // an OAuth ref with no key yet is also not usable
     const { keyRef } = store.startOAuth();
-    expect(() => store.addSubmission(v.persona, keyRef, "m")).toThrow();
+    await expect(store.addSubmission(v.persona, keyRef, "m")).rejects.toThrow();
   });
 
   it("takeVerifier is one-shot (a replayed OAuth callback gets nothing)", () => {
@@ -111,13 +140,13 @@ describe("ByoStore", () => {
     expect(store.takeVerifier("bogus")).toBeNull();
   });
 
-  it("draw removes the drawn agents from the queue (consumed after playing)", () => {
+  it("draw removes the drawn agents from the queue (consumed after playing)", async () => {
     const store = new ByoStore();
     for (let i = 0; i < 6; i++) {
       const kr = store.putRawKey("openrouter", `sk-${i}`);
       const v = validateSubmittedPersona({ name: `Agent ${i}`, body: "a valid persona body" });
       if (!v.ok) throw new Error(v.error);
-      store.addSubmission(v.persona, kr, "some/model");
+      await store.addSubmission(v.persona, kr, "some/model");
     }
     const drawn = store.draw(3);
     expect(drawn).toHaveLength(3);
@@ -134,12 +163,12 @@ describe("ByoStore", () => {
     expect(store.count()).toBe(0);
   });
 
-  it("draw returns everything when fewer agents than seats, emptying the queue", () => {
+  it("draw returns everything when fewer agents than seats, emptying the queue", async () => {
     const store = new ByoStore();
     const kr = store.putRawKey("openai", "sk-1");
     const v = validateSubmittedPersona({ name: "Solo", body: "a valid persona body" });
     if (!v.ok) throw new Error(v.error);
-    store.addSubmission(v.persona, kr, "gpt-4.1");
+    await store.addSubmission(v.persona, kr, "gpt-4.1");
     expect(store.draw(5)).toHaveLength(1);
     expect(store.count()).toBe(0);
   });

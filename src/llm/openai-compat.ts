@@ -40,6 +40,7 @@ export function openaiCompatProvider(cfg: LLMConfig): LLMProvider {
       return withRetry(async () => {
         const res = await client.chat.completions.create({
           model: cfg.model,
+          max_tokens: 1024, // short chat / small JSON — cap length and cost
           messages: [
             { role: "system", content: system },
             ...messages.map((m) => ({ role: m.role, content: m.content })),

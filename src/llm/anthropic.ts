@@ -32,7 +32,9 @@ export function anthropicProvider(cfg: LLMConfig): LLMProvider {
       return withRetry(async () => {
         const params: Anthropic.MessageCreateParams = {
           model: cfg.model,
-          max_tokens: 8000,
+          // Responses are short chat lines or small JSON; cap output (covers
+          // adaptive thinking too) to keep replies brief and bound cost.
+          max_tokens: 2000,
           // The system prompt is identical for every call an agent makes in a
           // game — cache it so each turn only pays for the new suffix.
           system: [

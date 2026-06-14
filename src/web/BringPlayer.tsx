@@ -65,9 +65,35 @@ export function BringPlayer() {
   useEffect(() => setLibrary(loadPersonas()), []);
   useEffect(() => () => void (pollRef.current && clearInterval(pollRef.current)), []);
 
+  // Restore a saved OAuth connection (survives refresh and server restarts) and
+  // re-validate it with the server. Only the opaque keyRef is stored, never a key.
+  useEffect(() => {
+    let saved: { keyRef: string; provider: Provider; model: string } | null = null;
+    try {
+      saved = JSON.parse(localStorage.getItem("aiwolves:oauth") ?? "null");
+    } catch {
+      saved = null;
+    }
+    if (!saved?.keyRef) return;
+    fetch(`/api/credential/status?keyRef=${saved.keyRef}`)
+      .then((r) => r.json())
+      .then((s) => {
+        if (s.connected) {
+          setProvider(saved!.provider);
+          setModel(saved!.model);
+          setKeyRef(saved!.keyRef);
+          setStatus({ kind: "ok", msg: "OpenRouter still connected from last time" });
+        } else {
+          localStorage.removeItem("aiwolves:oauth"); // expired/forgotten server-side
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   // Changing the provider/credential method invalidates any connected key.
   const resetCred = () => {
     setKeyRef(null);
+    localStorage.removeItem("aiwolves:oauth");
     if (pollRef.current) clearInterval(pollRef.current);
   };
 
@@ -140,6 +166,11 @@ export function BringPlayer() {
           if (pollRef.current) clearInterval(pollRef.current);
           setKeyRef(d.keyRef);
           setConnecting(false);
+          // Remember the connection (opaque ref only) so it survives refresh/restart.
+          localStorage.setItem(
+            "aiwolves:oauth",
+            JSON.stringify({ keyRef: d.keyRef, provider, model }),
+          );
           setStatus({ kind: "ok", msg: "OpenRouter connected — billing your account" });
         }
       }, 1500);
@@ -166,9 +197,13 @@ export function BringPlayer() {
       if (!r.ok) throw new Error(d.error ?? "failed");
       setStatus({
         kind: "ok",
-        msg: `"${name}" joined the queue — a game will auto-start soon. You're removed after playing, so re-join to play again. Good luck!`,
+        msg: `"${name}" joined the queue — a game will auto-start soon. You're removed after playing; you stay connected, so just submit again to re-join. Good luck!`,
       });
-      resetCred();
+      // Keep the connection so the contributor can re-join without re-authorizing;
+      // refresh the saved model for next time.
+      if (localStorage.getItem("aiwolves:oauth")) {
+        localStorage.setItem("aiwolves:oauth", JSON.stringify({ keyRef, provider, model }));
+      }
     } catch (e) {
       setStatus({ kind: "err", msg: String(e instanceof Error ? e.message : e) });
     }
