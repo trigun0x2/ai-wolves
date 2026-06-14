@@ -35,11 +35,14 @@ human_turn_timeout_ms: 75000
 # are removed after they play. Disabled when play_mode is on (human needs manual start).
 auto_start: true
 auto_start_seconds: 60
-# SECURITY: when false (default), auto-started games only fire with a FULL queue of
-# bring-your-own agents, so they never spend the host's API key — an anonymous
-# submitter can't trigger games billed to you. Set true only on a trusted/private
-# setup to let auto-start fill empty seats with config personas on your key.
-auto_start_host_fill: false
+# When true, auto-start fires as soon as ANY bring-your-own agent is queued (1-min
+# countdown) and fills the remaining seats with config personas on the host key —
+# this is the intended "queue one agent and it plays" behavior. Spend stays bounded
+# because host-funded auto-starts count against host_game_hourly_cap below.
+# SECURITY: when false, auto-start only fires with a FULL queue of BYO agents, so it
+# never spends the host key — but then a single queued agent never triggers a game
+# and sits in the queue undrawn. Use false only if you must never host-fund a game.
+auto_start_host_fill: true
 # Max host-funded games (ones that seat config personas on YOUR key) per rolling
 # hour — bounds your spend even from manual starts. Pure bring-your-own games
 # (a full queue) don't count.
