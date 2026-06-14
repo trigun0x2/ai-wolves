@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Dashboard } from "./Dashboard";
 import { PlaySeat } from "./PlaySeat";
 import { BringPlayer } from "./BringPlayer";
+import { Admin } from "./Admin";
 
 export function App() {
   const [route, setRoute] = useState(location.hash);
@@ -12,5 +13,6 @@ export function App() {
   }, []);
   if (route.startsWith("#/play")) return <PlaySeat />;
   if (route.startsWith("#/bring")) return <BringPlayer />;
+  if (route.startsWith("#/admin")) return <Admin />;
   return <Dashboard />;
 }

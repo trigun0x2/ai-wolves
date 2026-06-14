@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CardRef, PublicPlayer, RevealData, Role } from "../shared/types";
 import { useGame, type UiState } from "./useGame";
-import { getOpToken, setOpToken, opHeaders } from "./operator";
+import { setOpToken, opHeaders } from "./operator";
 
 const ROLE_EMOJI: Record<Role, string> = {
   villager: "🧑‍🌾",
@@ -18,7 +18,7 @@ const ROLE_EMOJI: Record<Role, string> = {
   doppelganger: "🎭",
 };
 
-const SPEEDS = [0.5, 1, 1.5, 2, 3];
+export const SPEEDS = [0.5, 1, 1.5, 2, 3];
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
@@ -34,13 +34,11 @@ const isMobile = () =>
   typeof window !== "undefined" && window.matchMedia("(max-width: 860px)").matches;
 
 export function Dashboard() {
-  const { state, send } = useGame("spectator");
+  const { state } = useGame("spectator");
   // Spoilers default OFF on a phone (casual spectator view); desktop/OBS keeps
   // the config default. Either way the GM toggle still overrides.
   const [spoilers, setSpoilers] = useState<boolean | null>(() => (isMobile() ? false : null));
-  const [transcripts, setTranscripts] = useState<string[]>([]);
   const [banner, setBanner] = useState<string | null>(null);
-  const [opOk, setOpOk] = useState<boolean | null>(null);
   // First-time intro: auto-show until dismissed (persisted per browser).
   const [showHelp, setShowHelp] = useState(() => !localStorage.getItem("aiwolves:onboarded"));
   const dismissHelp = () => {
@@ -49,30 +47,6 @@ export function Dashboard() {
   };
 
   const showSpoilers = spoilers ?? state.lobby?.spoilerDefault ?? false;
-  const authRequired = state.lobby?.authRequired ?? false;
-  const authed = !authRequired || opOk === true;
-
-  // Verify the operator token (if auth is on) so we can gate the host controls.
-  useEffect(() => {
-    if (!authRequired) {
-      setOpOk(true);
-      return;
-    }
-    if (!getOpToken()) {
-      setOpOk(false);
-      return;
-    }
-    fetch("/api/operator/check", { headers: opHeaders() })
-      .then((r) => setOpOk(r.ok))
-      .catch(() => setOpOk(false));
-  }, [authRequired, state.connected]);
-
-  useEffect(() => {
-    fetch("/api/transcripts")
-      .then((r) => r.json())
-      .then((d) => setTranscripts(d.files ?? []))
-      .catch(() => {});
-  }, [state.games, state.lobby?.running]);
 
   useEffect(() => {
     if (state.error) {
@@ -81,24 +55,6 @@ export function Dashboard() {
       return () => clearTimeout(t);
     }
   }, [state.error]);
-
-  const start = async () => {
-    const res = await fetch("/api/start", { method: "POST", headers: opHeaders() });
-    if (!res.ok) {
-      const d = await res.json().catch(() => ({}));
-      setBanner(d.error ?? "failed to start");
-      setTimeout(() => setBanner(null), 8000);
-    }
-  };
-
-  const replay = async (file: string) => {
-    if (!file) return;
-    await fetch("/api/replay", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...opHeaders() },
-      body: JSON.stringify({ file }),
-    });
-  };
 
   const showStrip = state.phase === "day" || state.phase === "vote" || state.phase === "reveal";
 
@@ -137,72 +93,24 @@ export function Dashboard() {
 
       <aside className="sidebar">
         <PhaseBanner state={state} />
-        <Submissions state={state} authed={authed} />
+        <Submissions state={state} />
         <Roster state={state} />
         <section className="panel controls">
-          <div className="panel-title">Control</div>
-          {authRequired && <OperatorGate opOk={opOk} />}
-          {authed && (
-            <>
-              <CountdownBanner state={state} />
-              <button
-                className="btn primary"
-                onClick={start}
-                disabled={!state.connected || state.lobby?.running}
-              >
-                {state.lobby?.running
-                  ? "Game in progress…"
-                  : state.lobby?.countdownEndsAt
-                    ? "▶ Start now"
-                    : "▶ Start game"}
-              </button>
-              {state.lobby?.playMode && (
-                <div className="hint">
-                  Play mode: {state.lobby.humanClaimed ? `${state.lobby.humanClaimed} seated` : "waiting for human at #/play"}
-                </div>
-              )}
-              <div className="speed-row">
-                <span className="speed-label">🐢 Text speed</span>
-                {SPEEDS.map((s) => (
-                  <button
-                    key={s}
-                    className={`btn speed ${state.speed === s ? "sel" : ""}`}
-                    onClick={() => send({ type: "set_speed", speed: s })}
-                  >
-                    {s}×
-                  </button>
-                ))}
-              </div>
-              <label className="toggle">
-                <input
-                  type="checkbox"
-                  checked={showSpoilers}
-                  onChange={(e) => setSpoilers(e.target.checked)}
-                />
-                GM / spoiler panel
-              </label>
-              <select
-                className="select"
-                defaultValue=""
-                disabled={state.lobby?.running}
-                onChange={(e) => {
-                  replay(e.target.value);
-                  e.target.value = "";
-                }}
-              >
-                <option value="" disabled>
-                  ↻ Replay a saved game…
-                </option>
-                {transcripts.map((f) => (
-                  <option key={f} value={f}>
-                    {f.replace(".json", "")}
-                  </option>
-                ))}
-              </select>
-            </>
-          )}
+          <div className="panel-title">View</div>
+          <CountdownBanner state={state} />
+          <label className="toggle">
+            <input
+              type="checkbox"
+              checked={showSpoilers}
+              onChange={(e) => setSpoilers(e.target.checked)}
+            />
+            GM / spoiler panel
+          </label>
           {!state.connected && <div className="hint warn">reconnecting…</div>}
           {banner && <div className="hint warn">{banner}</div>}
+          <a className="admin-link" href="#/admin">
+            ⚙ Operator console
+          </a>
         </section>
         {showSpoilers && <GMPanel state={state} />}
         <Scoreboard state={state} />
@@ -313,7 +221,7 @@ function ChatFeed({ state }: { state: UiState }) {
   );
 }
 
-function PhaseBanner({ state }: { state: UiState }) {
+export function PhaseBanner({ state }: { state: UiState }) {
   const label = useMemo(() => {
     switch (state.phase) {
       case "lobby":
@@ -374,7 +282,7 @@ function Roster({ state }: { state: UiState }) {
   );
 }
 
-function Scoreboard({ state }: { state: UiState }) {
+export function Scoreboard({ state }: { state: UiState }) {
   const rows = state.leaderboard;
   if (rows.length === 0) return null;
   return (
@@ -477,7 +385,7 @@ function HelpModal({ onClose }: { onClose: () => void }) {
 }
 
 /** Operator login / status. Setting a token reloads so the WS reconnects authed. */
-function OperatorGate({ opOk }: { opOk: boolean | null }) {
+export function OperatorGate({ opOk }: { opOk: boolean | null }) {
   const [tok, setTok] = useState("");
   if (opOk) {
     return (
@@ -521,7 +429,7 @@ function OperatorGate({ opOk }: { opOk: boolean | null }) {
 }
 
 /** Live countdown to the next auto-started game. */
-function CountdownBanner({ state }: { state: UiState }) {
+export function CountdownBanner({ state }: { state: UiState }) {
   const [now, setNow] = useState(Date.now());
   const ends = state.lobby?.countdownEndsAt ?? null;
   useEffect(() => {
@@ -540,8 +448,9 @@ function CountdownBanner({ state }: { state: UiState }) {
   );
 }
 
-/** Host view of the agent queue. A random subset is drawn each game. */
-function Submissions({ state, authed }: { state: UiState; authed: boolean }) {
+/** The agent queue. Read-only on the public dashboard; `manage` adds the
+ *  operator-only remove buttons (used on the admin console). */
+export function Submissions({ state, manage = false }: { state: UiState; manage?: boolean }) {
   const list = state.submissions;
   const seats = state.lobby?.playerCount ?? 0;
   const remove = (id: string) =>
@@ -580,14 +489,16 @@ function Submissions({ state, authed }: { state: UiState; authed: boolean }) {
                   </div>
                   <div className="sub-preview">{s.personaPreview}</div>
                 </div>
-                <button
-                  className="sub-del"
-                  title="remove from queue"
-                  disabled={state.lobby?.running || !authed}
-                  onClick={() => remove(s.id)}
-                >
-                  ✕
-                </button>
+                {manage && (
+                  <button
+                    className="sub-del"
+                    title="remove from queue"
+                    disabled={state.lobby?.running}
+                    onClick={() => remove(s.id)}
+                  >
+                    ✕
+                  </button>
+                )}
               </div>
             ))}
           </div>
