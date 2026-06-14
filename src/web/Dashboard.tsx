@@ -122,7 +122,6 @@ export function Dashboard() {
         <PhaseBanner state={state} />
         <Submissions state={state} authed={authed} />
         <Roster state={state} />
-        <Scoreboard state={state} />
         <section className="panel controls">
           <div className="panel-title">Control</div>
           {authRequired && <OperatorGate opOk={opOk} />}
@@ -189,6 +188,7 @@ export function Dashboard() {
           {banner && <div className="hint warn">{banner}</div>}
         </section>
         {showSpoilers && <GMPanel state={state} />}
+        <Scoreboard state={state} />
       </aside>
     </div>
   );
