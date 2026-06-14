@@ -45,12 +45,12 @@ auto_start_host_fill: false
 # (a full queue) don't count.
 host_game_hourly_cap: 5
 
-# Default model for every agent. effort: low keeps the table chatty and cheap-ish;
-# raise to medium/high for sweatier play. thinking: false for models without
-# adaptive thinking support.
+# Host default model for config (non-BYO) bots. The provider is auto-selected
+# from whichever API key is set, in priority order: Anthropic > OpenAI > OpenRouter
+# (default models: claude-opus-4-8 / gpt-4.1 / anthropic/claude-opus-4-8).
+# To pin one explicitly, add `provider:` and `model:` here (skips auto-select).
+# effort: low keeps the table chatty and cheap-ish (Anthropic-only; ignored else).
 default_llm:
-  provider: anthropic
-  model: claude-opus-4-8
   effort: low
 
 # First N entries are seated (N - 1 in play mode). Per-agent llm overrides let

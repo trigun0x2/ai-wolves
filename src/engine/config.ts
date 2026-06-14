@@ -101,6 +101,44 @@ export function validateConfig(cfg: GameConfig): string[] {
   return errors;
 }
 
+/** Default model per provider when one isn't pinned in config. */
+const PROVIDER_DEFAULT_MODEL: Record<ProviderName, string> = {
+  anthropic: "claude-opus-4-8",
+  openai: "gpt-4.1",
+  openrouter: "anthropic/claude-opus-4-8",
+};
+
+const PROVIDER_ENV: Record<ProviderName, string> = {
+  anthropic: "ANTHROPIC_API_KEY",
+  openai: "OPENAI_API_KEY",
+  openrouter: "OPENROUTER_API_KEY",
+};
+
+/**
+ * Resolve the host default LLM for config (non-BYO) bots.
+ *  - If config pins both `provider` and `model`, honor it exactly.
+ *  - Otherwise auto-select the provider from whichever API key is present, in
+ *    priority order Anthropic > OpenAI > OpenRouter, with a sensible default
+ *    model. `model`/`effort`/`thinking` from config still override the resolved
+ *    values. Falls back to anthropic if no key is set (those bots then "pass").
+ */
+export function resolveDefaultLLM(raw?: Partial<LLMConfig>): LLMConfig {
+  if (raw?.provider && raw?.model) return { ...raw } as LLMConfig; // explicitly pinned
+
+  const order: ProviderName[] = ["anthropic", "openai", "openrouter"];
+  const provider = raw?.provider ?? order.find((p) => !!process.env[PROVIDER_ENV[p]]) ?? "anthropic";
+  return {
+    provider,
+    model: raw?.model ?? PROVIDER_DEFAULT_MODEL[provider],
+    ...(raw?.effort !== undefined
+      ? { effort: raw.effort }
+      : provider === "anthropic"
+        ? { effort: "low" }
+        : {}),
+    ...(raw?.thinking !== undefined ? { thinking: raw.thinking } : {}),
+  };
+}
+
 export function loadConfig(path: string): GameConfig {
   const raw = yaml.load(fs.readFileSync(path, "utf8")) as Partial<GameConfig>;
   const cfg: GameConfig = {
@@ -127,7 +165,7 @@ export function loadConfig(path: string): GameConfig {
     auto_start_seconds: raw.auto_start_seconds ?? 60,
     auto_start_host_fill: raw.auto_start_host_fill ?? false,
     host_game_hourly_cap: raw.host_game_hourly_cap ?? 5,
-    default_llm: raw.default_llm ?? { provider: "anthropic", model: "claude-opus-4-8" },
+    default_llm: resolveDefaultLLM(raw.default_llm),
     agents: raw.agents ?? [],
   };
   const errors = validateConfig(cfg);

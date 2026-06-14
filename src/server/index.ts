@@ -637,6 +637,8 @@ if (ROLE === "primary") {
 server.listen(PORT, () => {
   console.log(`AI Werewolf Arena [${ROLE}] → http://localhost:${PORT}  (ws: /ws, bus: ${bus.kind})`);
   if (ROLE === "gateway") console.log(`[gateway] proxying /api → ${PRIMARY_URL}`);
+  const dl = safeLoadConfig()?.default_llm;
+  if (dl) console.log(`[llm] host default for config bots: ${dl.provider} / ${dl.model}`);
   if (OPERATOR_TOKEN) {
     console.log("[auth] operator token required for start/replay/queue-removal/speed");
   } else {
