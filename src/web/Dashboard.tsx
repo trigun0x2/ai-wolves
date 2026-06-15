@@ -39,6 +39,11 @@ export function Dashboard() {
   // the config default. Either way the GM toggle still overrides.
   const [spoilers, setSpoilers] = useState<boolean | null>(() => (isMobile() ? false : null));
   const [banner, setBanner] = useState<string | null>(null);
+  // The reveal overlay is dismissable; once closed it stays closed until the
+  // next game's reveal. Tracked here (not inside the overlay) so the scroll lock
+  // below releases when it's dismissed.
+  const [revealClosed, setRevealClosed] = useState(false);
+  useEffect(() => setRevealClosed(false), [state.reveal]);
   // First-time intro: auto-show until dismissed (persisted per browser).
   const [showHelp, setShowHelp] = useState(() => !localStorage.getItem("aiwolves:onboarded"));
   const dismissHelp = () => {
@@ -58,13 +63,17 @@ export function Dashboard() {
 
   const showStrip = state.phase === "day" || state.phase === "vote" || state.phase === "reveal";
 
+  const revealShown = !!state.reveal && !revealClosed;
+
   // On mobile the night/vote/reveal overlays go full-screen; lock the page
-  // behind them so you can't scroll the sidebar into view mid-moment.
+  // behind them so you can't scroll the sidebar into view mid-moment. Must track
+  // whether an overlay is actually VISIBLE (not just present in state) — else a
+  // dismissed reveal would leave the page scroll-locked.
   const overlayActive =
     state.phase === "night" ||
     state.countdownAt !== null ||
     (!!state.votes && !state.reveal) ||
-    !!state.reveal;
+    revealShown;
   useEffect(() => {
     document.body.classList.toggle("overlay-open", overlayActive);
     return () => document.body.classList.remove("overlay-open");
@@ -88,7 +97,13 @@ export function Dashboard() {
         {(state.countdownAt !== null || (state.votes && !state.reveal)) && (
           <VoteOverlay state={state} />
         )}
-        {state.reveal && <EndgameOverlay reveal={state.reveal} players={state.players} />}
+        {revealShown && (
+          <EndgameOverlay
+            reveal={state.reveal!}
+            players={state.players}
+            onClose={() => setRevealClosed(true)}
+          />
+        )}
       </main>
 
       <aside className="sidebar">
@@ -736,9 +751,15 @@ function VoteOverlay({ state }: { state: UiState }) {
   );
 }
 
-function EndgameOverlay({ reveal, players }: { reveal: RevealData; players: PublicPlayer[] }) {
-  const [closed, setClosed] = useState(false);
-  if (closed) return null;
+function EndgameOverlay({
+  reveal,
+  players,
+  onClose,
+}: {
+  reveal: RevealData;
+  players: PublicPlayer[];
+  onClose: () => void;
+}) {
   const teamLabel: Record<string, string> = {
     village: "🏡 Village",
     werewolf: "🐺 Werewolf team",
@@ -798,7 +819,7 @@ function EndgameOverlay({ reveal, players }: { reveal: RevealData; players: Publ
           ))}
         </ol>
       </div>
-      <button className="btn" onClick={() => setClosed(true)}>
+      <button className="btn" onClick={onClose}>
         Close
       </button>
     </div>
