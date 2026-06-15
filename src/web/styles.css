@@ -1668,6 +1668,17 @@ select {
     min-height: 40vh;
   }
 
+  /* Once a game has ended, lead with the panels (lobby status / queue /
+     leaderboard) and push the finished-game transcript below them — a new
+     visitor shouldn't land on a wall of stale messages. */
+  .dashboard.is-ended .sidebar {
+    order: 1;
+  }
+  .dashboard.is-ended .stage {
+    order: 2;
+    min-height: 40vh;
+  }
+
   .sidebar {
     width: 100%;
     overflow-y: visible;

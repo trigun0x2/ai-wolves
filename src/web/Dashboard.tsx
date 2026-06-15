@@ -98,8 +98,15 @@ export function Dashboard() {
     return () => document.body.classList.remove("overlay-open");
   }, [overlayActive]);
 
+  // After a game ends there's a stale transcript in the stage; on mobile lead
+  // with the panels (lobby status / queue / leaderboard) instead so a new
+  // visitor isn't dropped onto a wall of messages.
+  const ended = !state.lobby?.running && state.chat.length > 0;
+
   return (
-    <div className={`dashboard ${state.phase === "lobby" ? "is-lobby" : ""}`}>
+    <div
+      className={`dashboard ${state.phase === "lobby" ? "is-lobby" : ""} ${ended ? "is-ended" : ""}`}
+    >
       {showHelp && <HelpModal onClose={dismissHelp} />}
       <button className="help-fab" title="How it works" onClick={() => setShowHelp(true)}>
         ?
