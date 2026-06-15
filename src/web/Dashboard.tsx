@@ -33,6 +33,16 @@ const refEq = (a: CardRef, b: CardRef) =>
 const isMobile = () =>
   typeof window !== "undefined" && window.matchMedia("(max-width: 860px)").matches;
 
+// Remember (on mobile only) which game's win screen has been dismissed, so the
+// full-screen reveal doesn't pop up again on every reload/reconnect. On desktop
+// the overlay is non-blocking, so we leave it to re-show per session.
+const REVEAL_SEEN_KEY = "aiwolves:revealSeen";
+const revealSeen = (gameId: string) =>
+  isMobile() && localStorage.getItem(REVEAL_SEEN_KEY) === gameId;
+const markRevealSeen = (gameId: string) => {
+  if (isMobile()) localStorage.setItem(REVEAL_SEEN_KEY, gameId);
+};
+
 export function Dashboard() {
   const { state } = useGame("spectator");
   // Spoilers default OFF on a phone (casual spectator view); desktop/OBS keeps
@@ -41,9 +51,18 @@ export function Dashboard() {
   const [banner, setBanner] = useState<string | null>(null);
   // The reveal overlay is dismissable; once closed it stays closed until the
   // next game's reveal. Tracked here (not inside the overlay) so the scroll lock
-  // below releases when it's dismissed.
+  // below releases when it's dismissed. On mobile a previously-seen game's win
+  // screen starts already-closed so it doesn't re-pop on reload/reconnect.
   const [revealClosed, setRevealClosed] = useState(false);
-  useEffect(() => setRevealClosed(false), [state.reveal]);
+  useEffect(() => {
+    if (!state.reveal) setRevealClosed(false);
+    else setRevealClosed(state.gameId ? revealSeen(state.gameId) : false);
+  }, [state.reveal, state.gameId]);
+
+  const closeReveal = () => {
+    setRevealClosed(true);
+    if (state.gameId) markRevealSeen(state.gameId);
+  };
   // First-time intro: auto-show until dismissed (persisted per browser).
   const [showHelp, setShowHelp] = useState(() => !localStorage.getItem("aiwolves:onboarded"));
   const dismissHelp = () => {
@@ -98,11 +117,7 @@ export function Dashboard() {
           <VoteOverlay state={state} />
         )}
         {revealShown && (
-          <EndgameOverlay
-            reveal={state.reveal!}
-            players={state.players}
-            onClose={() => setRevealClosed(true)}
-          />
+          <EndgameOverlay reveal={state.reveal!} players={state.players} onClose={closeReveal} />
         )}
       </main>
 

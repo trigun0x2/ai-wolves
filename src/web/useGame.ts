@@ -34,6 +34,7 @@ export interface TurnRequest {
 
 export interface UiState {
   connected: boolean;
+  gameId: string | null;
   lobby: LobbyState | null;
   leaderboard: LeaderboardEntry[];
   games: number;
@@ -65,6 +66,7 @@ export interface UiState {
 
 const initial: UiState = {
   connected: false,
+  gameId: null,
   lobby: null,
   leaderboard: [],
   games: 0,
@@ -121,6 +123,7 @@ function onEvent(state: UiState, ev: GameEvent): UiState {
     case "game_start":
       return {
         ...state,
+        gameId: ev.gameId,
         players: ev.players,
         roles: ev.roles,
         phase: "night",
